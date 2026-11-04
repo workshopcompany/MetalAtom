@@ -139,10 +139,23 @@ def _num(label, lo, hi, default, key, step=None, fmt=None, help=None, disabled=F
     return st.number_input(label, **kw)
 
 
+def _opt_back(cur, options):
+    """화면에 보이는(번역된) 선택값을 한국어 원문 옵션으로 되돌립니다."""
+    if cur is None:
+        return None
+    for o in options:
+        shown = i18n.tr(o)
+        if o == cur or shown == cur or str(shown).lower() == str(cur).lower():
+            return o
+    return None
+
+
 def _sel(label, options, key, index=0, help=None):
     ss = st.session_state
     if ss.get(key) not in options:
-        ss[key] = options[index]
+        # 저장값이 번역된 표시값이면 원문으로 되돌린 뒤, 위젯이 실제로 보여주는 값으로 넣습니다.
+        back = _opt_back(ss.get(key), options) or options[index]
+        ss[key] = i18n.tr(back)
     kw = dict(options=options, key=key)
     if help:
         kw["help"] = help
@@ -715,9 +728,9 @@ with tab2:
 
     # 코일 형상을 2 봉·코일 탭의 표시용으로 저장하고(다음 실행에서 반영),
     # 팁 표면 온도를 복사열 탭으로 연동합니다.
+    # 코일 길이만 2탭 표시용으로 저장합니다. g_top/g_bot은 위젯 키라 여기서 다시 쓰면
+    # (위젯이 이미 만들어졌을 때) Streamlit 오류가 나므로 건드리지 않습니다.
     st.session_state["g_len"] = float(_clamp(H * 1000.0, 10.0, 500.0))
-    st.session_state["g_top"] = float(_clamp(coil_top_h, 10.0, 200.0))
-    st.session_state["g_bot"] = float(_clamp(coil_bot_h, 10.0, 200.0))
     _push("rad_thot", tip_C, 100.0, 2500.0)
 
     m1, m2, m3, m4 = st.columns(4)
@@ -913,6 +926,129 @@ with tab2:
     ax2.legend()
     ax2.grid(True, alpha=0.3)
     st.pyplot(fig2)
+
+    # ---- 2(c) 절단면 보기 (기준점을 팁에서 위로 옮겨가며)
+    st.subheader("2(c). 절단면 보기 — 팁 기준 위치에서 XY / XZ / YZ")
+    st.caption("기준점을 금속 팁(0 mm)에서 위로 옮겨가며 그 높이의 단면을 봅니다. "
+               "계산은 축대칭(r, z) 모델이라 XZ·YZ 단면은 같게 나옵니다 "
+               "(실제 나선 코일에서는 턴 위치 때문에 원주 방향으로 조금 달라질 수 있습니다).")
+    st.caption("액상 영역은 액상선(등온선) 기준으로만 칠해집니다. 이 모델은 잠열과 용융 경계를 "
+               "넣지 않아 표면 온도가 액상선보다 높게(과대평가) 나올 수 있습니다.")
+    _Nr3 = Tg.shape[1]
+    _xi3 = np.linspace(0.0, 1.0, _Nr3)
+    _Tc3 = Tg - 273.15
+    _zmm3 = z * 1000.0
+    _Rmm3 = Rz * 1000.0
+    _Lmm3 = float(_zmm3[-1])
+
+    def _prof3(i3, r_mm3):
+        """깊이 인덱스 i3에서 반경 r_mm3(mm)의 온도(°C)."""
+        return np.interp(r_mm3, _xi3 * _Rmm3[i3], _Tc3[i3],
+                         left=_Tc3[i3][0], right=_Tc3[i3][-1])
+
+    def _liq_r3(i3):
+        """그 높이에서 액상선에 도달하는 반경(mm). 용융 없으면 None."""
+        rr = np.linspace(0.0, float(_Rmm3[i3]), 240)
+        tt = _prof3(i3, rr)
+        if tt[-1] >= T_liq_C:
+            return float(rr[-1])
+        if tt[0] < T_liq_C:
+            return None
+        below = np.where(tt < T_liq_C)[0]
+        k = int(below[0])
+        t0, t1 = tt[k - 1], tt[k]
+        f = 0.0 if t1 == t0 else (T_liq_C - t0) / (t1 - t0)
+        return float(rr[k - 1] + f * (rr[k] - rr[k - 1]))
+
+    _c4, _c5 = st.columns([2, 1])
+    with _c4:
+        s3_plane = st.selectbox("절단면",
+                                ["XY (축에 수직, 단면)", "XZ (축 포함, 세로)",
+                                 "YZ (축 포함, 세로)"], key="s3_plane")
+    with _c5:
+        st.caption(f"봉 길이 {_Lmm3:.0f} mm (팁 기준)")
+    s3_pos = st.slider("팁 기준 위치 (mm) — 0 = 팁 끝, 위로 갈수록 증가",
+                       0.0, float(_Lmm3), 0.0, 1.0, key="s3_pos",
+                       help="금속 끝(팁)을 0으로 두고 위로 올라가며 단면을 확인합니다. "
+                            "코일 시작/끝 위치와 같은 기준입니다.")
+    _z3 = _Lmm3 - float(s3_pos)                       # 봉 상단 기준 깊이(mm)
+    _i3 = int(np.clip(np.abs(_zmm3 - _z3).argmin(), 0, len(_zmm3) - 1))
+    _rl3 = _liq_r3(_i3)
+    _m1, _m2, _m3, _m4 = st.columns(4)
+    _m1.metric("표면 온도", f"{_Tc3[_i3][-1]:.0f} °C")
+    _m2.metric("중심 온도", f"{_Tc3[_i3][0]:.0f} °C")
+    _m3.metric("표면 − 액상선", f"{_Tc3[_i3][-1] - T_liq_C:+.0f} °C")
+    _m4.metric("용융 반경 (액상선)",
+               "—" if _rl3 is None else f"{_rl3:.1f} / {_Rmm3[_i3]:.1f} mm")
+    st.caption(f"이 높이의 봉 반경 {_Rmm3[_i3]:.1f} mm · 코일 반경 "
+               f"{clear_radius(z[_i3]) * 1000.0:.1f} mm (팁 기준 {s3_pos:.0f} mm)")
+
+    _th3 = np.linspace(0.0, 2.0 * np.pi, 200)
+    if s3_plane.startswith("XY"):
+        _Rp = max(float(_Rmm3[_i3]), 0.2)
+        _xs3 = np.linspace(-_Rp, _Rp, 121)
+        _Xg, _Yg = np.meshgrid(_xs3, _xs3)
+        _Rg = np.hypot(_Xg, _Yg)
+        _Tm3 = np.where(_Rg <= _Rp, _prof3(_i3, _Rg), np.nan)
+        fig3 = go.Figure(go.Heatmap(
+            x=_xs3, y=_xs3, z=_Tm3, colorscale="Inferno", zsmooth="best",
+            colorbar=dict(title="°C", len=0.72, thickness=14),
+            hovertemplate=i18n.tr("x %{x:.1f} mm<br>y %{y:.1f} mm<br>%{z:.0f} °C<extra></extra>")))
+        _rc3 = clear_radius(z[_i3]) * 1000.0
+        fig3.add_trace(go.Scatter(x=_rc3 * np.cos(_th3), y=_rc3 * np.sin(_th3),
+                                  mode="lines", line=dict(color="#e8c400", dash="dot"),
+                                  name=i18n.tr("코일"), hoverinfo="skip"))
+        if _rl3 is not None and _rl3 > 0:
+            fig3.add_trace(go.Scatter(x=_rl3 * np.cos(_th3), y=_rl3 * np.sin(_th3),
+                                      mode="lines", line=dict(color="cyan", width=2),
+                                      fill="toself", fillcolor="rgba(0,229,255,0.20)",
+                                      name=i18n.tr("액상 영역 (T ≥ 액상선)"),
+                                      hoverinfo="skip"))
+        fig3.update_layout(
+            height=470, margin=dict(l=64, r=30, t=48, b=48), plot_bgcolor="white",
+            title=dict(text=i18n.tr(f"XY 단면 — 팁 기준 {s3_pos:.0f} mm "
+                                    f"(봉 상단에서 {_z3:.0f} mm)"), font=dict(size=13)),
+            xaxis=dict(title="x (mm)", scaleanchor="y", constrain="domain"),
+            yaxis=dict(title="y (mm)"))
+        st.plotly_chart(fig3, width="stretch")
+    else:
+        _hname = "x" if s3_plane.startswith("XZ") else "y"
+        _hmax = float(np.max(_Rmm3)) * 1.15
+        _hx = np.linspace(-_hmax, _hmax, 141)
+        _Tm3 = np.empty((len(_zmm3), len(_hx)))
+        for _k3 in range(len(_zmm3)):
+            _row = _prof3(_k3, np.abs(_hx))
+            _row[np.abs(_hx) > _Rmm3[_k3]] = np.nan
+            _Tm3[_k3] = _row
+        fig3 = go.Figure(go.Heatmap(
+            x=_hx, y=_zmm3, z=_Tm3, colorscale="Inferno", zsmooth="best",
+            colorbar=dict(title="°C", len=0.72, thickness=14),
+            hovertemplate=i18n.tr(f"{_hname} %{{x:.1f}} mm<br>깊이 %{{y:.1f}} mm"
+                                  f"<br>%{{z:.0f}} °C<extra></extra>")))
+        fig3.add_trace(go.Contour(
+            x=_hx, y=_zmm3, z=_Tm3,
+            contours=dict(type="constraint", operation=">", value=float(T_liq_C)),
+            fillcolor="rgba(0,229,255,0.20)", line=dict(color="cyan", width=2),
+            showscale=False, hoverinfo="skip",
+            name=i18n.tr("액상 영역 (T ≥ 액상선)")))
+        _inc = (_zmm3 >= z1 * 1000.0 - 1e-9) & (_zmm3 <= z2 * 1000.0 + 1e-9)
+        _cz = _zmm3[_inc]
+        _cx = np.array([clear_radius(zz) * 1000.0 for zz in z[_inc]])
+        for _sgn, _show in ((-1, True), (1, False)):
+            fig3.add_trace(go.Scatter(x=_sgn * _cx, y=_cz, mode="lines",
+                                      line=dict(color="#e8c400", dash="dot", width=1),
+                                      name=i18n.tr("코일"), showlegend=_show, hoverinfo="skip"))
+        fig3.add_trace(go.Scatter(x=[float(_hx.min()), float(_hx.max())],
+                                  y=[_zmm3[_i3], _zmm3[_i3]], mode="lines",
+                                  line=dict(color="#ff4d4d", width=1.5, dash="dash"),
+                                  name=i18n.tr("기준 위치")))
+        fig3.update_layout(
+            height=520, margin=dict(l=64, r=30, t=48, b=48), plot_bgcolor="white",
+            title=dict(text=i18n.tr(f"{_hname.upper()}Z 단면 — 기준 위치 팁 기준 "
+                                    f"{s3_pos:.0f} mm"), font=dict(size=13)),
+            xaxis=dict(title=f"{_hname} (mm)"),
+            yaxis=dict(title=i18n.tr("깊이 (mm, 아래로 갈수록 팁)"), autorange="reversed"))
+        st.plotly_chart(fig3, width="stretch")
 
     expl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "cone-vs-straight-explainer.png")

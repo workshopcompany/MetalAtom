@@ -876,3 +876,61 @@ TERM.update({
     " mm — `2(b) 코일 형상`의 위치·간극·턴수에서 자동 계산됩니다.":
         " mm — computed from the coil position, gap and turns in 2(b).",
 })
+
+EN.update({
+    "2(c). 절단면 보기 — 팁 기준 위치에서 XY / XZ / YZ":
+        "2(c). Cross-sections — XY / XZ / YZ at a position measured from the tip",
+    "기준점을 금속 팁(0 mm)에서 위로 옮겨가며 그 높이의 단면을 봅니다. "
+    "계산은 축대칭(r, z) 모델이라 XZ·YZ 단면은 같게 나옵니다 "
+    "(실제 나선 코일에서는 턴 위치 때문에 원주 방향으로 조금 달라질 수 있습니다).":
+        "Move the reference point upward from the metal tip (0 mm) to inspect the "
+        "cross-section at that height. The model is axisymmetric (r, z), so the XZ and YZ "
+        "sections are identical (a real helical coil varies slightly around the circumference).",
+    "절단면": "Cross-section plane",
+    "XY (축에 수직, 단면)": "XY (normal to the axis)",
+    "XZ (축 포함, 세로)": "XZ (axial, vertical)",
+    "YZ (축 포함, 세로)": "YZ (axial, vertical)",
+    "팁 기준 위치 (mm) — 0 = 팁 끝, 위로 갈수록 증가":
+        "Position from tip (mm) — 0 = tip end, increasing upward",
+    "금속 끝(팁)을 0으로 두고 위로 올라가며 단면을 확인합니다. "
+    "코일 시작/끝 위치와 같은 기준입니다.":
+        "The metal tip end is 0; move upward to inspect sections. "
+        "Same reference as the coil start/end positions.",
+    "중심 온도": "Centre temperature",
+    "표면 − 액상선": "Surface − liquidus",
+    "용융 반경 (액상선)": "Molten radius (liquidus)",
+    "기준 위치": "Reference position",
+})
+TERM.update({
+    "봉 길이 ": "Rod length ",
+    " mm (팁 기준)": " mm (from tip)",
+    "이 높이의 봉 반경 ": "Rod radius at this height ",
+    " mm · 코일 반경 ": " mm · coil radius ",
+    " mm (팁 기준 ": " mm (from tip ",
+    "XY 단면 — 팁 기준 ": "XY section — from tip ",
+    " mm (봉 상단에서 ": " mm (from rod top ",
+    " 단면 — 기준 위치 팁 기준 ": " section — reference from tip ",
+    "깊이 ": "depth ",
+})
+
+EN.update({
+    '2(b). 코일 형상 — 봉 팁 콘·코일 단면과 가열 계산':
+        "2(b). Coil geometry — tip cone, coil cross-section and heating",
+})
+TERM.update({
+    "팁 기준 ": "from tip ",
+    "봉 상단에서 ": "from rod top ",
+})
+
+EN.update({
+    "액상 영역 (T ≥ 액상선)": "Molten zone (T ≥ liquidus)",
+    "액상선": "Liquidus",
+    "코일": "Coil",
+})
+
+EN.update({
+    "액상 영역은 액상선(등온선) 기준으로만 칠해집니다. 이 모델은 잠열과 용융 경계를 "
+    "넣지 않아 표면 온도가 액상선보다 높게(과대평가) 나올 수 있습니다.":
+        "The molten zone is shaded strictly by the liquidus isotherm. This model has no "
+        "latent heat or melting front, so the surface temperature can overshoot the liquidus.",
+})

@@ -963,3 +963,28 @@ TERM.update({
     "팁 표면 ": "tip surface ",
     "용융 캡 ": "melt cap ",
 })
+
+EN.update({
+    "봉 길이 (mm)": "Rod length (mm)",
+    "팁 끝부터 봉 상단까지의 길이입니다. 코일 위치(팁 기준)와 이 길이로 "
+    "그림에 보이는 봉 구간이 정해집니다.":
+        "Length from the tip end to the rod top. Together with the coil position "
+        "(measured from the tip) this sets the rod span shown in the figure.",
+    "위쪽 잘라내기 (봉 상단에서, mm)": "Crop from rod top (mm)",
+    "그림에서 봉 상단부터 이만큼 잘라냅니다. 0이면 봉 전체가 보입니다.":
+        "Cut this much from the rod top in the figure. 0 shows the whole rod.",
+    "코일 시작 위치가 봉 상단보다 위입니다 — 봉 길이를 늘리거나 코일을 내리세요.":
+        "The coil start is above the rod top — increase the rod length or lower the coil.",
+})
+
+EN.update({
+    "두 모델 나란히 비교": "Both models side by side",
+    "**결합 모델 비교 — 같은 조건, 두 모델**":
+        "**Coupling model comparison — same conditions, both models**",
+})
+
+EN.update({
+    "액상선 이상<br>깊이 %{y:.1f} mm<br>표면 온도 %{customdata:.0f} °C<extra></extra>":
+        "Above liquidus<br>Depth %{y:.1f} mm"
+        "<br>Surface temperature %{customdata:.0f} °C<extra></extra>",
+})

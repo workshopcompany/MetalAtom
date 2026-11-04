@@ -102,9 +102,10 @@ _DEFAULTS = {
     "t4_ox": 5.0, "t4_fines": 10.0,
     # 코일 가열 보기 (코일 형상의 기준)
     "g_cone": 40.0, "g_tip": 1.0, "g_cstart": 90.0, "g_cend": -10.0,
-    "g_crop": 20.0, "g_gap": 20.0, "g_turns": 5, "g_wire": 6.0,
+    "g_crop": 0.0, "g_gap": 20.0, "g_turns": 5, "g_wire": 6.0,
     "g_ww": 8.0, "g_wh": 6.0, "g_freq": 30.0, "g_tfeed": 25.0, "g_shank": 30.0,
     "g_shape_p": 2.0,
+    "g_rodlen": 100.0,
     "g_len": 100.0, "g_top": 100.0, "g_bot": 100.0,
     # 복사열
     "rad_ahot": 0.030, "rad_eps": 0.8, "rad_f": 0.30, "rad_awall": 0.30,
@@ -564,6 +565,9 @@ with tab2:
                       help="0이면 콘 없이 직선 팁입니다.")
         tip_d = _num("봉 팁 지름 (mm)", 0.0, 100.0, 1.0, "g_tip", 1.0,
                      help="콘 끝의 지름. 0이면 뾰족한 팁(절단 없음), 0보다 크면 그 지름으로 잘린 절두 원뿔입니다.")
+        rod_len = _num("봉 길이 (mm)", 20.0, 400.0, 100.0, "g_rodlen", 5.0,
+                       help="팁 끝부터 봉 상단까지의 길이입니다. 코일 위치(팁 기준)와 이 길이로 "
+                            "그림에 보이는 봉 구간이 정해집니다.")
         coil_shape = _sel(
             "코일 형상",
             ["봉 형상 따라가기 (콘 밀착)", "직선", "원뿔 (선형 테이퍼)", "곡선 테이퍼 (지수)"],
@@ -576,12 +580,14 @@ with tab2:
         coil_end = _num("코일 끝 위치 (팁 기준, mm)", -300.0, 300.0, -10.0, "g_cend", 5.0,
                         help="코일 마지막 턴의 위치. −로 두면 코일이 금속 팁보다 아래로 내려갑니다 "
                              "(기본 −10 mm = 팁 아래로 한 턴 더).")
-        crop_top = _num("위쪽 잘라내기 (코일 상단에서, mm)", 0.0, 200.0, 20.0, "g_crop", 5.0,
-                        help="그림에서 코일 상단부터 이만큼 아래를 위쪽 경계로 씁니다.")
+        crop_top = _num("위쪽 잘라내기 (봉 상단에서, mm)", 0.0, 300.0, 0.0, "g_crop", 5.0,
+                        help="그림에서 봉 상단부터 이만큼 잘라냅니다. 0이면 봉 전체가 보입니다.")
         coil_gap = _num("코일–봉 간극 (mm)", 1.0, 50.0, 20.0, "g_gap", 1.0,
                         help="코일 내면과 봉 표면 사이 거리. '봉 형상 따라가기'에서는 코일 내경을 "
                              "봉 지름 + 간극 2배로 잡고, 다른 형상에서도 최소 간극으로 적용됩니다.")
-        couple_mode = _sel("코일 결합 모델", ["반경비² (기존)", "간극 기준 (신규)"], "g_couple",
+        couple_mode = _sel("코일 결합 모델",
+                           ["반경비² (기존)", "간극 기준 (신규)", "두 모델 나란히 비교"],
+                           "g_couple",
                            help="기존 방식은 결합을 (봉 반경 / 코일 반경)² 으로 봅니다 — 가는 팁에서는 "
                                 "결합이 급격히 약해져 꼭지점이 덜 녹습니다. "
                                 "간극 기준은 원주 2πR 에 간극 효율 1/(1+(간극/코일 반경)²) 을 곱해, "
@@ -617,17 +623,19 @@ with tab2:
                 shape_p = 1.0
         freq = _num("주파수 (kHz)", 1.0, 500.0, 30.0, "g_freq", 1.0)
         T_feed_h = _num("봉 공급 온도 (°C)", 0.0, 500.0, 25.0, "g_tfeed", 5.0)
-        shank = _num("코일 위 봉 길이 (mm)", 10.0, 200.0, 30.0, "g_shank", 5.0)
 
     R = rod_d_h / 2000.0
     r_tip = min(max(tip_d, 0.0) / 2000.0, R)
-    shank_m = shank / 1000.0
     gap_r = coil_gap / 1000.0
     # 코일 위치 기준은 봉 팁(아래): +는 팁 위, −는 팁 아래
     c_start_m = coil_start / 1000.0
     c_end_m = coil_end / 1000.0
     H = max(abs(coil_start - coil_end), 1.0) / 1000.0     # 코일 축방향 길이
-    L = shank_m + max(c_start_m, c_end_m, 0.0)            # 봉 길이 = 팁 깊이
+    L = max(rod_len / 1000.0, c_start_m + 1e-3)           # 봉 길이 = 팁 깊이 (입력값)
+    shank_m = max(L - max(c_start_m, 0.0), 0.0)           # 코일 위 봉 길이(표시·설명용)
+    shank = shank_m * 1000.0
+    if c_start_m > L + 1e-9:
+        st.warning("코일 시작 위치가 봉 상단보다 위입니다 — 봉 길이를 늘리거나 코일을 내리세요.")
     z_start = L - c_start_m
     z_end = L - c_end_m
     z1, z2 = min(z_start, z_end), max(z_start, z_end)     # 코일 상단/하단 깊이
@@ -810,7 +818,10 @@ with tab2:
     xi = np.linspace(0.0, 1.0, Nr)
     Rp = np.maximum(Rz, 1e-4) * 1000.0            # 반경 (mm)
     crop_m = crop_top / 1000.0
-    zcrop = z1 + crop_m                          # 위쪽 비가열부는 잘라내고 코일 구간부터
+    zcrop = crop_m                               # 봉 상단에서 이만큼 자름 (0 = 봉 전체)
+    if turns_h > 0:                              # 첫 턴보다 10 mm 위까지는 데이터도 그립니다
+        zcrop = min(zcrop, z1 + 0.5 * (H / turns_h) - 0.010)
+    zcrop = max(zcrop, 0.0)
     keep = z >= zcrop - 1e-9
     if keep.sum() < 2:
         keep = z >= 0.0
@@ -895,6 +906,7 @@ with tab2:
     fig = go.Figure()
     fig.add_trace(go.Heatmap(
         x=x_mm, y=zk, z=Zplot, colorscale="Inferno", connectgaps=False,
+        hoverongaps=False,
         colorbar=dict(title="°C", len=0.7, thickness=14, x=1.01),
         hovertemplate=i18n.tr("반경 %{x:.1f} mm<br>깊이 %{y:.1f} mm<br>온도 %{z:.0f} °C<extra></extra>"),
         name="온도"))
@@ -911,7 +923,9 @@ with tab2:
             fig.add_trace(go.Scatter(
                 x=sgn * Rk[molten], y=zk[molten], mode="markers",
                 marker=dict(color="cyan", size=3),
-                hovertemplate=i18n.tr("액상선 이상<br>깊이 %{y:.1f} mm<extra></extra>"),
+                customdata=Tk[molten, -1],
+                hovertemplate=i18n.tr("액상선 이상<br>깊이 %{y:.1f} mm"
+                                      "<br>표면 온도 %{customdata:.0f} °C<extra></extra>"),
                 showlegend=False))
     anno = []
     if cone_m > 0:
@@ -948,6 +962,48 @@ with tab2:
     st.plotly_chart(fig, width="stretch")
     st.caption(f"노란 원 {len(turn_y_mm)}개 = 코일 {int(turns_h)}턴 "
                f"(턴 간격 {pitch_mm:.1f} mm). 노란 점선은 코일 내경 경로입니다.")
+
+    if couple_mode == "두 모델 나란히 비교":
+        st.markdown(i18n.tr("**결합 모델 비교 — 같은 조건, 두 모델**"))
+        _zmin = float(np.nanmin(Zplot))
+        _zmax = float(np.nanmax(Zplot))
+        _colA, _colB = st.columns(2)
+        for _col, _Tf, _nm in ((_colA, Tg, "반경비² (기존)"),
+                               (_colB, Tg_alt, "간극 기준 (신규)")):
+            _Tcc = _Tf[keep] - 273.15
+            _Zc2 = np.full((len(zk), len(r_common)), np.nan)
+            for _i2 in range(len(zk)):
+                _pr = np.interp(r_common, xi * Rk[_i2], _Tcc[_i2], left=_Tcc[_i2][0])
+                _pr[r_common > Rk[_i2] + 1e-9] = np.nan
+                _Zc2[_i2] = _pr
+            _Zp2 = np.concatenate([_Zc2[:, ::-1], _Zc2[:, 1:]], axis=1)
+            _fc = go.Figure(go.Heatmap(
+                x=x_mm, y=zk, z=_Zp2, colorscale="Inferno", zmin=_zmin, zmax=_zmax,
+                hoverongaps=False,
+                colorbar=dict(title="°C", len=0.68, thickness=12),
+                hovertemplate=i18n.tr("반경 %{x:.1f} mm<br>깊이 %{y:.1f} mm"
+                                      "<br>온도 %{z:.0f} °C<extra></extra>")))
+            _fc.add_trace(go.Contour(
+                x=x_mm, y=zk, z=_Zp2,
+                contours=dict(type="constraint", operation=">", value=float(T_liq_C)),
+                fillcolor="rgba(0,229,255,0.20)", line=dict(color="cyan", width=1.5),
+                showscale=False, hoverinfo="skip", name=i18n.tr("액상 영역 (T ≥ 액상선)")))
+            for _sgn in (-1, 1):
+                _fc.add_trace(go.Scatter(x=_sgn * rc_curve, y=zc * 1000.0, mode="lines",
+                                         line=dict(color="#e8c400", width=1, dash="dot"),
+                                         hoverinfo="skip", showlegend=False))
+            _fc.update_layout(
+                height=430, margin=dict(l=54, r=56, t=40, b=40), plot_bgcolor="white",
+                title=dict(text=i18n.tr(_nm), font=dict(size=12)),
+                xaxis=dict(title=i18n.tr("반경 (mm)"), range=[-xmax, xmax]),
+                yaxis=dict(title="", range=[bottom_mm, top_mm], scaleanchor="x",
+                           scaleratio=1, constrain="domain"))
+            _tipc = float(_Tf[-1, -1]) - 273.15
+            _capc = melt_len_from_tip(_Tf[:, -1] - 273.15)
+            with _col:
+                st.plotly_chart(_fc, width="stretch")
+                st.caption(f"{i18n.tr(_nm)} — {i18n.tr('팁 표면 ')}{_tipc:.0f} °C, "
+                           f"{i18n.tr('용융 캡 ')}{_capc:.0f} mm")
 
     fig2, ax2 = plt.subplots()
     ax2.plot(T_surf, z * 1000, label=i18n.tr("표면 온도"))
@@ -1025,6 +1081,7 @@ with tab2:
         _Tm3 = np.where(_Rg <= _Rp, _prof3(_i3, _Rg), np.nan)
         fig3 = go.Figure(go.Heatmap(
             x=_xs3, y=_xs3, z=_Tm3, colorscale="Inferno", zsmooth="best",
+            hoverongaps=False,
             colorbar=dict(title="°C", len=0.72, thickness=14),
             hovertemplate=i18n.tr("x %{x:.1f} mm<br>y %{y:.1f} mm<br>%{z:.0f} °C<extra></extra>")))
         _rc3 = clear_radius(z[_i3]) * 1000.0
@@ -1055,15 +1112,24 @@ with tab2:
             _Tm3[_k3] = _row
         fig3 = go.Figure(go.Heatmap(
             x=_hx, y=_zmm3, z=_Tm3, colorscale="Inferno", zsmooth="best",
+            hoverongaps=False,
             colorbar=dict(title="°C", len=0.72, thickness=14),
             hovertemplate=i18n.tr(f"{_hname} %{{x:.1f}} mm<br>깊이 %{{y:.1f}} mm"
                                   f"<br>%{{z:.0f}} °C<extra></extra>")))
+        _Tmol = np.where(_Tm3 >= T_liq_C, _Tm3, np.nan)
+        if np.isfinite(_Tmol).any():
+            fig3.add_trace(go.Heatmap(
+                x=_hx, y=_zmm3, z=_Tmol, hoverongaps=False, showscale=False,
+                colorscale=[[0.0, "rgba(0,229,255,0.18)"], [1.0, "rgba(0,229,255,0.18)"]],
+                hovertemplate=i18n.tr(f"{_hname} %{{x:.1f}} mm<br>깊이 %{{y:.1f}} mm"
+                                      f"<br>%{{z:.0f}} °C<extra></extra>"),
+                name=i18n.tr("액상 영역 (T ≥ 액상선)")))
         fig3.add_trace(go.Contour(
             x=_hx, y=_zmm3, z=_Tm3,
             contours=dict(type="constraint", operation=">", value=float(T_liq_C)),
-            fillcolor="rgba(0,229,255,0.20)", line=dict(color="cyan", width=2),
+            fillcolor="rgba(0,0,0,0)", line=dict(color="cyan", width=2),
             showscale=False, hoverinfo="skip",
-            name=i18n.tr("액상 영역 (T ≥ 액상선)")))
+            name=i18n.tr("액상선")))
         _inc = (_zmm3 >= z1 * 1000.0 - 1e-9) & (_zmm3 <= z2 * 1000.0 + 1e-9)
         _cz = _zmm3[_inc]
         _cx = np.array([clear_radius(zz) * 1000.0 for zz in z[_inc]])

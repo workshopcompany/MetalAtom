@@ -785,3 +785,94 @@ EN.update({
     "미분 기준 (µm)": "Fines threshold (µm)",
 })
 _TERM_KEYS = None
+
+EN.update({
+    "연동 사용 — 이 탭의 코일 설정을 앞 탭에 적용":
+        "Link — apply this tab's coil settings to the earlier tabs",
+    "켜면 봉 지름·공급 속도·코일 출력/효율/턴수/길이/내경·용탕 생성량·팁 온도가 "
+    "2 봉·코일, 1·3 탭 용탕 유량, 5 수율, 복사열 탭으로 자동 전달됩니다. "
+    "끈 상태에서는 각 탭이 자기 값을 그대로 씁니다.":
+        "When on, rod diameter, feed rate, coil power/efficiency/turns/length/inner diameter, "
+        "melt rate and tip temperature are pushed to 2 Rod & Coil, the melt flow inputs of "
+        "1 Process and 3 Nozzle, 5 Yield and the Radiation tab. When off, each tab keeps its own values.",
+    "연동 중 — 2 봉·코일, 1·3 탭 용탕 유량, 5 수율, 복사열 탭에 이 값이 적용됩니다.":
+        "Linked — these values are applied to 2 Rod & Coil, the melt flow inputs of 1 & 3, "
+        "5 Yield and the Radiation tab.",
+    "코일이 금속을 녹여 만든 용탕의 온도(가정값)입니다. 녹는점(액상선)이 아니라 점도·표면장력·용탕 생성량을 "
+    "계산할 때 쓰는 온도입니다.":
+        "Assumed temperature of the melt the coil produces. This is not the melting point "
+        "(liquidus); it is the temperature used for viscosity, surface tension and melt-rate estimates.",
+})
+TERM.update({
+    "녹는점(액상선) ": "Melting point (liquidus) ",
+    " °C · 팁 표면 ": " °C · tip surface ",
+    " °C → 여유 ": " °C → margin ",
+    " °C — 팁 표면이 액상선 이상이면 용탕이 생깁니다.":
+        " °C — melt forms once the tip surface is at or above the liquidus.",
+})
+_TERM_KEYS = None
+
+
+# ---------------------------------------------------------------- linking UI
+EN.update({
+    "연동 사용 — 앞 공정 값과 자동으로 연동":
+        "Link — follow the upstream process values automatically",
+    "켜면 1 공정·2 봉·코일의 값이 모든 탭에 자동으로 들어가고, 이 탭의 봉 지름·"
+    "공급 속도·코일 출력/효율은 2 봉·코일 값을 그대로 표시합니다. "
+    "연동된 값을 직접 고치려 하면 연동 해제를 물어봅니다. "
+    "끄면 각 탭이 자기 값을 그대로 씁니다.":
+        "When on, values from 1 Process and 2 Rod & Coil flow into every tab, and the rod "
+        "diameter, feed rate, coil power and efficiency shown here are copied from 2 Rod & Coil. "
+        "Editing a linked value asks whether to unlink it. When off, each tab keeps its own values.",
+    "이 값은 앞 탭에서 연동된 값입니다. 직접 입력하려면 연동을 해제해야 합니다.":
+        "This value is linked from an earlier tab. Unlink it to enter your own value.",
+    "연동 해제하고 이 값 사용": "Unlink and use this value",
+    "연동값으로 되돌리기": "Restore the linked value",
+    "연동 다시 사용": "Link again",
+    "연동 해제됨 — 이 탭에서 직접 입력하는 값입니다.":
+        "Unlinked — this tab now uses its own value.",
+    "연동이 꺼져 있을 때만 이 탭의 값을 씁니다.": "Used only while linking is off.",
+    "코일이 녹여 낸 용탕의 온도입니다. 2 봉·코일과 4 분말 품질 탭이 "
+    "이 값을 그대로 받아 씁니다.":
+        "Melt temperature produced by the coil. 2 Rod & Coil and 4 Powder Quality "
+        "use this exact value.",
+    "2 봉·코일의 봉 지름·공급 속도·코일 출력에서 계산된 값이 "
+    "자동으로 들어옵니다. 직접 입력하려면 연동을 해제하세요.":
+        "Filled automatically from the rod diameter, feed rate and coil power in 2 Rod & Coil. "
+        "Unlink it to enter your own value.",
+    "코일 가열 보기의 팁 표면 온도가 연동됩니다.":
+        "Linked from the tip surface temperature in the coil heating view.",
+})
+TERM.update({
+    "봉 Ø": "Rod Ø",
+    " mm · 출력 ": " mm · power ",
+    " kW · 효율 ": " kW · efficiency ",
+    " · 공급 ": " · feed ",
+    " mm/s — 2 봉·코일에서 연동됩니다.": " mm/s — linked from 2 Rod & Coil.",
+    "코일 ": "Coil ",
+    "턴 · 길이 ": " turns · length ",
+    " mm · 상부 ": " mm · top ",
+    " / 하부 ": " / bottom ",
+    " mm — `코일 가열 보기`의 위치·간극·턴수에서 자동 계산됩니다.":
+        " mm — computed from the coil position, gap and turns in the coil heating view.",
+})
+
+EN.update({
+    "2(b). 코일 형상 — 봉 팁 콘·코일 단면과 가열 계산":
+        "2(b). Coil geometry — tip cone, coil cross-section and heating",
+    "켜면 값이 모든 탭에서 양방향으로 공유됩니다. 여기서 고친 봉 지름·코일 출력·"
+    "코일 형상도 1 공정 계산과 용탕 유량, 복사열에 바로 반영됩니다. "
+    "끄면 각 탭이 자기 값을 그대로 씁니다.":
+        "When on, values are shared in both directions across all tabs. The rod diameter, "
+        "coil power and coil geometry set here also update the 1 Process calculation, the melt "
+        "rate and the radiation tab. When off, each tab keeps its own values.",
+})
+
+EN.update({
+    "코일 가열 보기의 팁 표면 온도가 연동됩니다.":
+        "Linked from the tip surface temperature in 2(b) coil geometry.",
+})
+TERM.update({
+    " mm — `2(b) 코일 형상`의 위치·간극·턴수에서 자동 계산됩니다.":
+        " mm — computed from the coil position, gap and turns in 2(b).",
+})

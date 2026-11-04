@@ -487,6 +487,128 @@ def rod_descent_temperature_var(z, q_prime, v_feed, rho, cp, T_feed, T_melt, Lf,
     return T
 
 
+def rod_descent_temperature_axial(z, q_prime, v_feed, rho, cp, T_feed, T_melt, Lf,
+                                  R_z, k, h_conv=50.0, eps=0.8, T_amb=300.0):
+    """rod_descent_temperature_var + axial heat conduction along the rod.
+
+    Steady balance per unit length (uniform z grid, as built by the caller):
+        mdot * de/dz = q'(z) - loss(z) + d/dz [ k*A(z)*dT/dz ]
+    with mdot = rho * pi * R_z[0]^2 * v_feed (constant by mass conservation)
+    and an adiabatic tip (no conduction flux past the free end).
+
+    The melting plateau pins T at T_melt while e spans [e_melt, e_liq], so
+    conducted heat into a plateau cell melts more material instead of raising
+    its temperature; conduction mainly preheats the cold shank above the coil.
+    Solved implicitly (Newton in enthalpy e with a tridiagonal Jacobian):
+    an explicit march is unstable for the stiff conduction term on a fine
+    grid. Falls back to rod_descent_temperature_var when there is no feed
+    (mdot <= 0) or too few points.
+    """
+    import numpy as np
+    sigma = 5.67e-8
+    Nz = len(z)
+    R0 = R_z[0] if Nz > 0 else 0.0
+    mdot = rho * math.pi * R0 ** 2 * v_feed
+    if Nz < 3 or mdot <= 0:
+        return rod_descent_temperature_var(z, q_prime, v_feed, rho, cp,
+                                           T_feed, T_melt, Lf, R_z,
+                                           h_conv, eps, T_amb)
+    dz = float(z[1] - z[0])
+    e_melt = cp * (T_melt - T_feed)
+    e_liq = e_melt + Lf
+    kA_half = k * math.pi * ((R_z[:-1] + R_z[1:]) / 2.0) ** 2
+
+    def temp_from_e(e):
+        T = np.empty_like(e)
+        m1 = e < e_melt
+        m2 = (e >= e_melt) & (e <= e_liq)
+        m3 = e > e_liq
+        T[m1] = T_feed + e[m1] / cp
+        T[m2] = T_melt
+        T[m3] = T_melt + (e[m3] - e_liq) / cp
+        return T
+
+    def dT_de(e):
+        d = np.zeros_like(e)
+        d[(e < e_melt) | (e > e_liq)] = 1.0 / cp
+        return d
+
+    def resid(e):
+        T = temp_from_e(e)
+        loss = 2.0 * math.pi * R_z * (h_conv * (T - T_amb)
+                                      + eps * sigma * (T ** 4 - T_amb ** 4))
+        F = np.zeros(Nz - 1)
+        for j in range(Nz - 1):
+            i = j + 1
+            if i < Nz - 1:
+                cond = (kA_half[i] * (T[i + 1] - T[i])
+                        - kA_half[i - 1] * (T[i] - T[i - 1])) / dz ** 2
+            else:
+                cond = (0.0 - kA_half[i - 1] * (T[i] - T[i - 1])) / dz ** 2
+            F[j] = mdot * (e[i] - e[i - 1]) / dz - q_prime[i] + loss[i] - cond
+        return F, T
+
+    # initial guess: conduction-free march in e
+    e = np.zeros(Nz)
+    for i in range(Nz - 1):
+        Ti = temp_from_e(np.array([e[i]]))[0]
+        loss = 2.0 * math.pi * R_z[i] * (h_conv * (Ti - T_amb)
+                                         + eps * sigma * (Ti ** 4 - T_amb ** 4))
+        e[i + 1] = max(e[i] + (q_prime[i] - loss) * dz / mdot, 0.0)
+    e[0] = 0.0
+
+    n = Nz - 1
+    for _ in range(80):
+        F, T = resid(e)
+        dtd = dT_de(e)
+        dloss = 2.0 * math.pi * R_z * (h_conv + 4.0 * eps * sigma * T ** 3)
+        a = np.zeros(n)
+        b = np.zeros(n)
+        c = np.zeros(n)
+        for j in range(n):
+            i = j + 1
+            if i < Nz - 1:
+                dcdi = (kA_half[i] + kA_half[i - 1]) / dz ** 2
+                dcdm = -kA_half[i - 1] / dz ** 2
+                dcdp = -kA_half[i] / dz ** 2
+            else:
+                dcdi = kA_half[i - 1] / dz ** 2
+                dcdm = -kA_half[i - 1] / dz ** 2
+                dcdp = 0.0
+            b[j] = mdot / dz + (dloss[i] + dcdi) * dtd[i]
+            if j >= 1:
+                a[j] = -mdot / dz + dcdm * dtd[i - 1]
+            if i < Nz - 1:
+                c[j] = dcdp * dtd[i + 1]
+        # Thomas algorithm for the tridiagonal Newton step (rhs = -F)
+        cp_ = np.zeros(n)
+        dp_ = np.zeros(n)
+        cp_[0] = c[0] / b[0]
+        dp_[0] = -F[0] / b[0]
+        for i2 in range(1, n):
+            m = b[i2] - a[i2] * cp_[i2 - 1]
+            cp_[i2] = c[i2] / m if i2 < n - 1 else 0.0
+            dp_[i2] = (-F[i2] - a[i2] * dp_[i2 - 1]) / m
+        delta = np.zeros(n)
+        delta[-1] = dp_[-1]
+        for i2 in range(n - 2, -1, -1):
+            delta[i2] = dp_[i2] - cp_[i2] * delta[i2 + 1]
+        step = 1.0
+        fnorm = float(np.max(np.abs(F)))
+        while step > 1e-4:
+            e_try = e.copy()
+            e_try[1:] += step * delta
+            e_try = np.maximum(e_try, 0.0)
+            F_try, _ = resid(e_try)
+            if float(np.max(np.abs(F_try))) <= fnorm:
+                break
+            step *= 0.5
+        e = e_try
+        if float(np.max(np.abs(step * delta))) < 1.0:
+            break
+    return temp_from_e(e)
+
+
 def radial_temperature_field_var(T_ax, q_prime, R_z, delta, k, Nr=25):
     """radial_temperature_field for a radius that varies with z (cone tip).
 

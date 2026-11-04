@@ -586,12 +586,23 @@ with tab2:
                         help="코일 내면과 봉 표면 사이 거리. '봉 형상 따라가기'에서는 코일 내경을 "
                              "봉 지름 + 간극 2배로 잡고, 다른 형상에서도 최소 간극으로 적용됩니다.")
         couple_mode = _sel("코일 결합 모델",
-                           ["반경비² (기존)", "간극 기준 (신규)", "두 모델 나란히 비교"],
+                           ["반경비² (기존)", "간극 기준 (신규)", "자계 강화 (신규)"],
                            "g_couple",
-                           help="기존 방식은 결합을 (봉 반경 / 코일 반경)² 으로 봅니다 — 가는 팁에서는 "
+                           help="결합 모델은 셋 중 하나만 선택합니다 (동시에 적용하지 않음). "
+                                "반경비²는 결합을 (봉 반경 / 코일 반경)² 으로 봅니다 — 가는 팁에서는 "
                                 "결합이 급격히 약해져 꼭지점이 덜 녹습니다. "
                                 "간극 기준은 원주 2πR 에 간극 효율 1/(1+(간극/코일 반경)²) 을 곱해, "
-                                "표면적이 있는 만큼은 가열되도록 봅니다. 결과는 아래에 나란히 표시됩니다.")
+                                "표면적이 있는 만큼은 가열되도록 봅니다. "
+                                "자계 강화는 단위 길이당 흡수 전력을 원주 × 자계² 으로 봅니다 "
+                                "(자계 ∝ 1/코일 반경) — 코일이 좁아질수록 표면 가열이 세집니다.")
+        axial_on = st.checkbox(
+            "축방향 전도 포함", key="g_axial", value=False,
+            help="축방향 열전도를 에너지 수지에 추가합니다. 봉을 따라 열이 퍼져 코일 위쪽 찬 봉이 "
+                 "예열되지만, 팁 온도는 용융 구간에 묶여 거의 변하지 않습니다. 계산이 다소 느려집니다.")
+        compare_on = st.checkbox(
+            "기준과 비교", key="g_compare", value=False,
+            help="왼쪽은 기준(반경비², 축방향 전도 OFF), 오른쪽은 현재 선택(결합 모델 + 축방향 전도)을 "
+                 "나란히 표시합니다.")
         sect_h = _sel("코일 단면 형상", ["원형", "직사각형"], "g_sect",
                       help="실제 유도 코일은 보통 원형 단면(동관·동선)입니다. "
                            "단면 형상과 무관하게 코일 위치·출력 계산은 동일합니다.")
@@ -681,11 +692,13 @@ with tab2:
     k_th = alloy["k_thermal"]
     delta = ph.skin_depth(alloy["rho_e"], freq * 1000.0)
 
-    def solve_heat(rc_func, couple="ratio"):
+    def solve_heat(rc_func, couple="ratio", axial=False):
         """코일 반경 함수 → 봉 단면 온도장 (Nz x Nr).
 
         couple="ratio": 결합 ∝ (봉 반경 / 코일 반경)²  — 기존 방식
         couple="gap":   결합 ∝ 원주 2πR × 1/(1 + (간극/코일 반경)²) — 간극 기준
+        couple="field": 결합 ∝ 봉 반경 / 코일 반경² — 자계 강화 (원주 × 자계², 자계 ∝ 1/코일 반경)
+        axial=True면 축방향 열전도를 더한 음함수 풀이를 씁니다 (기본값은 전도 없는 행진 풀이).
         """
         w2 = np.zeros(Nz)
         for i, zz in enumerate(z):
@@ -694,23 +707,32 @@ with tab2:
                 if couple == "gap":
                     gap_i = max(rc - Rz[i], 1e-6)
                     w2[i] = (2.0 * math.pi * Rz[i]) / (1.0 + (gap_i / rc) ** 2)
+                elif couple == "field":
+                    w2[i] = Rz[i] / rc ** 2
                 else:
                     w2[i] = (Rz[i] / rc) ** 2     # 가까운 코일일수록 결합이 세짐
         w2 = w2 * ripple
         s = w2.sum()
         qp = P_rod * w2 / (s * dz) if s > 0 else np.zeros(Nz)
-        Tax = ph.rod_descent_temperature_var(z, qp, feed_h / 1000.0,
-                                             alloy["rho_melt"], alloy["cp"],
-                                             T_feed_h + 273.15, alloy["T_liquidus"],
-                                             alloy["Lf"], Rz)
+        if axial:
+            Tax = ph.rod_descent_temperature_axial(
+                z, qp, feed_h / 1000.0, alloy["rho_melt"], alloy["cp"],
+                T_feed_h + 273.15, alloy["T_liquidus"], alloy["Lf"], Rz, k_th)
+        else:
+            Tax = ph.rod_descent_temperature_var(z, qp, feed_h / 1000.0,
+                                                 alloy["rho_melt"], alloy["cp"],
+                                                 T_feed_h + 273.15, alloy["T_liquidus"],
+                                                 alloy["Lf"], Rz)
         Tg, _ = ph.radial_temperature_field_var(Tax, qp, Rz, delta, k_th, Nr=33)
         return Tg
 
-    couple_key = "gap" if couple_mode == "간극 기준 (신규)" else "ratio"
-    Tg = solve_heat(coil_radius, couple_key)
+    couple_key = {"반경비² (기존)": "ratio",
+                  "간극 기준 (신규)": "gap",
+                  "자계 강화 (신규)": "field"}.get(couple_mode, "ratio")
+    Tg = solve_heat(coil_radius, couple_key, axial=axial_on)
     r_sc = coil_radius(z1)           # 같은 상부 내경의 직선 코일 기준값
-    Tg_s = solve_heat(lambda zz: r_sc, couple_key)
-    Tg_alt = solve_heat(coil_radius, "ratio" if couple_key == "gap" else "gap")
+    Tg_s = solve_heat(lambda zz: r_sc, couple_key, axial=axial_on)
+    Tg_alt = solve_heat(coil_radius, "ratio", axial=False)   # 기준: 반경비², 전도 OFF
     T_surf = Tg[:, -1] - 273.15
     T_cent = Tg[:, 0] - 273.15
     T_liq_C = alloy["T_liquidus"] - 273.15
@@ -772,12 +794,17 @@ with tab2:
                f"길이 {H * 1000:.0f} mm·{turns_h}턴, "
                f"코일은 팁 기준 {coil_start:+.0f} mm ~ {coil_end:+.0f} mm (+위/−아래). "
                f"봉 길이 {L * 1000:.0f} mm, 코일 상단은 봉 위에서 {shank:.0f} mm 내려온 지점입니다.")
-    _alt_name = i18n.tr("반경비² (기존)" if couple_key == "gap" else "간극 기준 (신규)")
-    st.caption(i18n.tr("결합 모델 비교 — ")
-               + i18n.tr(couple_mode) + f": {i18n.tr('팁 표면 ')}{tip_C:.0f} °C, "
-               + f"{i18n.tr('용융 캡 ')}{melt_len:.0f} mm  |  " + _alt_name + f": "
-               + f"{i18n.tr('팁 표면 ')}{alt_tip_C:.0f} °C, "
-               + f"{i18n.tr('용융 캡 ')}{alt_melt_len:.0f} mm")
+    _cur_cap = (i18n.tr(couple_mode)
+                + (f" + {i18n.tr('축방향 전도')}" if axial_on else "")
+                + f": {i18n.tr('팁 표면 ')}{tip_C:.0f} °C, "
+                + f"{i18n.tr('용융 캡 ')}{melt_len:.0f} mm")
+    if couple_key == "ratio" and not axial_on:
+        st.caption(i18n.tr("결합 모델 비교 — ") + _cur_cap)
+    else:
+        st.caption(i18n.tr("결합 모델 비교 — ") + _cur_cap + "  |  "
+                   + i18n.tr("반경비² (기존)") + f" ({i18n.tr('기준')}): "
+                   + f"{i18n.tr('팁 표면 ')}{alt_tip_C:.0f} °C, "
+                   + f"{i18n.tr('용융 캡 ')}{alt_melt_len:.0f} mm")
     if tip_molten:
         st.success(f"팁 표면이 액상선 이상입니다. 용탕 생성 가능 — 이탈 모드: {mode_m} "
                    f"(팁 Weber 수 {We_tip_m:.1f}, 류 직경 {d_exit_m * 1000:.2f} mm, "
@@ -963,13 +990,14 @@ with tab2:
     st.caption(f"노란 원 {len(turn_y_mm)}개 = 코일 {int(turns_h)}턴 "
                f"(턴 간격 {pitch_mm:.1f} mm). 노란 점선은 코일 내경 경로입니다.")
 
-    if couple_mode == "두 모델 나란히 비교":
-        st.markdown(i18n.tr("**결합 모델 비교 — 같은 조건, 두 모델**"))
+    if compare_on:
+        st.markdown(i18n.tr("**기준과 비교 — 같은 조건**"))
         _zmin = float(np.nanmin(Zplot))
         _zmax = float(np.nanmax(Zplot))
         _colA, _colB = st.columns(2)
-        for _col, _Tf, _nm in ((_colA, Tg, "반경비² (기존)"),
-                               (_colB, Tg_alt, "간극 기준 (신규)")):
+        _cur_name = i18n.tr(couple_mode) + (f" + {i18n.tr('축방향 전도')}" if axial_on else "")
+        for _col, _Tf, _nm in ((_colA, Tg_alt, "반경비² (기존)"),
+                               (_colB, Tg, _cur_name)):
             _Tcc = _Tf[keep] - 273.15
             _Zc2 = np.full((len(zk), len(r_common)), np.nan)
             for _i2 in range(len(zk)):

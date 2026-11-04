@@ -984,6 +984,38 @@ EN.update({
 })
 
 EN.update({
+    "자계 강화 (신규)": "Field-strengthened (new)",
+    "축방향 전도 포함": "Include axial conduction",
+    "축방향 전도": "axial conduction",
+    "기준과 비교": "Compare with baseline",
+    "기준": "baseline",
+    "**기준과 비교 — 같은 조건**": "**Baseline comparison — same conditions**",
+    "결합 모델은 셋 중 하나만 선택합니다 (동시에 적용하지 않음). "
+    "반경비²는 결합을 (봉 반경 / 코일 반경)² 으로 봅니다 — 가는 팁에서는 "
+    "결합이 급격히 약해져 꼭지점이 덜 녹습니다. "
+    "간극 기준은 원주 2πR 에 간극 효율 1/(1+(간극/코일 반경)²) 을 곱해, "
+    "표면적이 있는 만큼은 가열되도록 봅니다. "
+    "자계 강화는 단위 길이당 흡수 전력을 원주 × 자계² 으로 봅니다 "
+    "(자계 ∝ 1/코일 반경) — 코일이 좁아질수록 표면 가열이 세집니다.":
+        "Select exactly one coupling model (they are not combined). "
+        "Radius ratio² weights coupling by (rod radius / coil radius)² — on a thin tip "
+        "the coupling collapses, so the apex melts less. Gap-based multiplies the "
+        "circumference 2πR by a gap efficiency 1/(1+(gap/coil radius)²), so the surface area "
+        "that exists is actually heated. Field-strengthened weights absorbed power per unit "
+        "length by circumference × field² (field ∝ 1/coil radius) — surface heating "
+        "strengthens as the coil narrows.",
+    "축방향 열전도를 에너지 수지에 추가합니다. 봉을 따라 열이 퍼져 코일 위쪽 찬 봉이 "
+    "예열되지만, 팁 온도는 용융 구간에 묶여 거의 변하지 않습니다. 계산이 다소 느려집니다.":
+        "Adds axial heat conduction to the energy balance. Heat spreads along the rod and "
+        "preheats the cold shank above the coil, but the tip temperature barely changes "
+        "because it is pinned on the melting plateau. Computation is somewhat slower.",
+    "왼쪽은 기준(반경비², 축방향 전도 OFF), 오른쪽은 현재 선택(결합 모델 + 축방향 전도)을 "
+    "나란히 표시합니다.":
+        "Shows the baseline (radius ratio², axial conduction OFF) on the left and the current "
+        "selection (coupling model + axial conduction) on the right, side by side.",
+})
+
+EN.update({
     "액상선 이상<br>깊이 %{y:.1f} mm<br>표면 온도 %{customdata:.0f} °C<extra></extra>":
         "Above liquidus<br>Depth %{y:.1f} mm"
         "<br>Surface temperature %{customdata:.0f} °C<extra></extra>",

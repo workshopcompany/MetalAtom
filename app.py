@@ -519,7 +519,7 @@ with tab2:
                    f"자동 계산됩니다.")
     with c3:
         tip_shape = _sel("팁 형상", ["평탄", "둥근", "샤프"], "t2_tip")
-        fall_h = _num("팁→노즐 낙하 높이 (mm)", 50.0, 1000.0, 200.0, "t2_fall_mm", 10.0)
+        fall_h = _num("팁→노즐 낙하 높이 (mm)", 50.0, 1000.0, 200.0, "t2_fall_mm", 1.0)
         T_melt2 = _num("용탕 온도 (°C) ",
                        float(alloy["T_liquidus"] - 273.15) - 50,
                        float(alloy["T_liquidus"] - 273.15) + 300,
@@ -801,8 +801,22 @@ with tab2:
     m_feed = alloy["rho_melt"] * math.pi * R ** 2 * (feed_h / 1000.0)       # kg/s
     m_dot_melt = min(m_pow, m_feed) if m_feed > 0 else m_pow
     sigma_melt = ph.melt_surface_tension(alloy, T_melt_K)
+    det0 = ph.stream_detachment(m_dot_melt, alloy["rho_melt"], sigma_melt,
+                                r_tip, fall_h / 1000.0, 9.81 + gas_acc)
+    # 보어 흡입 (3탭 값에서 자동 계산): 용탕이 보어를 막을수록 가스 통로가 좁아져
+    # 가스가 빨라지고 흡입이 커지는 벤투리 피드백 + 챔버 압력차. 흡입은 낙하 말단에서
+    # 작용하므로 낙하 시간은 그대로 두고 보어 입구 속도만 높이고 류는 가늘어진다.
+    _ss = st.session_state
+    _D_bore = float(_ss.get("t3_bore", 10.0)) / 1000.0
+    _dP_ch = float(_ss.get("t3_dp", 0.5)) * 1e5
+    _Pc = float(_ss.get("t3_pc", 1.5)) * 1e5
+    _rho_gas = _Pc / (R_gas * 300.0) if R_gas > 0 else 0.0
+    _m_gas = float(_CHAIN.get("m_gas", 0.0)) / 60.0
+    suc = ph.bore_suction(det0["d_gas"], _D_bore, _m_gas, _rho_gas,
+                          alloy["rho_melt"], _dP_ch)
     det = ph.stream_detachment(m_dot_melt, alloy["rho_melt"], sigma_melt,
-                               r_tip, fall_h / 1000.0, 9.81 + gas_acc)
+                               r_tip, fall_h / 1000.0, 9.81 + gas_acc,
+                               v_boost=suc["v_boost"])
     mode_m = det["mode"]
     mode_txt_m = det["explanation"]
     We_tip_m = det["We_neck"]      # 하위 표시 호환용: 넥 Weber 수
@@ -852,6 +866,12 @@ with tab2:
                    f"붕괴 {t_break_m * 1000:.0f} ms, 펜던트 한 방울 Ø{tate_m * 1000:.1f} mm, "
                    f"용탕량 {m_dot_melt * 60:.2f} kg/min)")
         st.info(mode_txt_m)
+        st.caption(i18n.tr(f"보어 흡입 (3탭 보어 Ø{_D_bore * 1000:.0f} mm, 챔버 ΔP "
+                           f"{float(_ss.get('t3_dp', 0.5)):.2f} bar, 가스 {_m_gas * 60:.1f} kg/min): "
+                           f"벤투리 ΔP {suc['dP_venturi'] / 1e5:.2f} bar → "
+                           f"보어 입구 속도 +{suc['v_boost']:.1f} m/s, "
+                           f"보어 입구 Ø{d_gas_m * 1000:.2f} mm. "
+                           f"판정에는 이 보어 흡입 가속이 포함되어 있습니다."))
         with st.expander("왜 물방울 모드 / 실 모드로 갈리나? (점도·표면장력 이야기)"):
             st.markdown(i18n.doc("droplet",
                 "판정은 세 단계로 합니다 (v2 낙하-신장 모델).\n\n"
@@ -867,6 +887,9 @@ with tab2:
                 "- **녹았는지와는 별개입니다.** 팁이 액상선을 넘어 완전히 녹아도, 넥이 유지되지 않거나 "
                 "낙하 중 끊기면 물방울 모드입니다.\n"
                 "- 실 모드로 가려면: 용탕량↑(출력·공급속도↑), 낙하 거리↓, 가스·압력차 가속↑, 과열↑(σ↓).\n"
+                "- **보어 흡입.** 용탕이 보어를 막을수록 가스 통로가 좁아져 가스가 빨라지고 흡입이 커집니다 "
+                "(벤투리 피드백: 용탕이 내려갈 때 흡입이 더 강해짐). 흡입은 보어 진입과 미립화에는 도움이 되지만, "
+                "류를 가늘게 만들어 붕괴 시간을 줄이므로 낙하 생존에는 도움이 되지 않습니다.\n"
                 "- 점도는 `Oh = μ/√(ρ·σ·d)` 로 영향을 줍니다. 점성이 크면 경계가 물방울 쪽으로 넓어집니다. "
                 "다만 mm급이면 Oh ≈ 0.002로 영향이 1 % 미만이고, 마이크로 오리피스·고점도 용탕에서 "
                 "중요해집니다 (현재 판정식은 넥 We와 낙하 시간만 사용 — 한계).\n"

@@ -93,6 +93,12 @@ EN = {
     "둥근": "Rounded",
     "샤프": "Sharp",
     "팁→노즐 낙하 높이 (mm)": "Tip → nozzle fall height (mm)",
+    "보어 흡입": "Bore suction",
+    "벤투리 ΔP": "Venturi ΔP",
+    "챔버 ΔP": "Chamber ΔP",
+    "보어 입구 속도": "Bore-entry velocity",
+    "보어 입구 Ø": "Bore-entry Ø",
+    "판정에는 이 보어 흡입 가속이 포함되어 있습니다": "The verdict includes this bore-suction boost",
     "용탕 온도 (°C)": "Melt temperature (°C)",
     "이탈모드 하한 We": "Detachment lower We",
     "이탈모드 상한 We": "Detachment upper We",
@@ -383,6 +389,14 @@ EN = {
 
 # Korean fragment -> English (f-string parts, longest-first substitution)
 TERM = {
+    "보어": "bore",
+    "보어 흡입": "Bore suction",
+    "벤투리 ΔP": "Venturi ΔP",
+    "챔버 ΔP": "Chamber ΔP",
+    "보어 입구 속도": "Bore-entry velocity",
+    "보어 입구 Ø": "Bore-entry Ø",
+    "판정에는 이 보어 흡입 가속이 포함되어 있습니다": "The verdict includes this bore-suction boost",
+    "가스": "gas",
     # long tails
     " s — 체류 시간이 확산 시간보다 짧으면 중심까지 열이 다 퍼지기 전에 팁이 나가므로 표면 위주 가열이 됩니다 (정상상태 근사라 실제보다 균일하게 보일 수 있음).":
         " s — when the residence time is shorter than the diffusion time, the tip leaves before heat "
@@ -506,6 +520,7 @@ DOCS = {
 - **Stage 3 — survival:** if the fall time `t_fall` exceeds the capillary breakup time scale `t_b ≈ 30·√(ρ·(d/2)³/σ)`, the column breaks before reaching the gas zone and arrives as droplets.
 - It is **independent of whether the metal is molten**. Even when the tip is fully above the liquidus, a neck that cannot hold together, or a column that breaks during the fall, gives droplet mode.
 - To move toward thread mode: higher melt flow (power/feed rate), shorter fall distance, stronger gas/ΔP acceleration, more superheat (lower σ).
+- **Bore suction.** When melt flows, the stream blocks part of the bore, the gas passage narrows, the gas speeds up, and suction grows (Venturi feedback: suction is stronger while melt is flowing than while it is not). Suction helps bore entry and atomization, but it thins the stream and shortens the breakup time, so it does not help fall survival.
 - **Viscosity** enters as `Oh = μ/√(ρ·σ·d)`. Higher viscosity widens the droplet side. For a mm-scale neck `Oh ≈ 0.002`, i.e. well under 1 % influence; it matters for micro-orifices or high-viscosity melts. **The current criterion uses neck We and fall time only (a known limitation).**
 - σ falls as temperature rises, so We_neck rises: at the same flow, more superheat pushes toward thread mode.
 
@@ -539,6 +554,7 @@ DOCS = {
 - **Stage 3 — survival.** Whether the stream breaks up by capillary (Rayleigh-Plateau) instability before reaching the gas zone: if the fall time `t_fall` exceeds the breakup time scale `t_b ≈ 30·√(ρ·(d/2)³/σ)`, it arrives as droplets.
 - **It is independent of whether the metal is molten.** Even when the tip is fully above the liquidus, a neck that cannot hold together, or a column that breaks during the fall, gives droplet mode.
 - To move toward thread mode: higher melt flow (power/feed rate), shorter fall distance, stronger gas/ΔP acceleration, more superheat (lower σ).
+- **Bore suction.** When melt flows, the stream blocks part of the bore, the gas passage narrows, the gas speeds up, and suction grows (Venturi feedback: suction is stronger while melt is flowing than while it is not). Suction helps bore entry and atomization, but it thins the stream and shortens the breakup time, so it does not help fall survival.
 - Viscosity enters as `Oh = μ/√(ρ·σ·d)`. Higher viscosity widens the droplet side. For a mm-scale neck Oh ≈ 0.002 (under 1 % influence); it matters for micro-orifices and high-viscosity melts (current criterion uses neck We and fall time only — a limitation).
 - The v2 thresholds (neck We 2/4, breakup factor 30) are literature-scale heuristics and need calibration against equipment records.""",
 }

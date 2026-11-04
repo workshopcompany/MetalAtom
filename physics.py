@@ -217,7 +217,8 @@ def detachment_mode(We_tip, lo=4.0, hi=12.0):
             "공정 안정성이 떨어지는 구간.")
 
 
-def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0):
+def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0,
+                      v_boost=0.0):
     """Falling-stream detachment model (v2) for the rod tip.
 
     Replaces the v1 tip-exit Weber criterion, which treated the tip as a
@@ -242,6 +243,14 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0):
 
     Stage 3 — survival. Rayleigh-Plateau breakup time at the gas-zone
     diameter, t_b = C_break * sqrt(rho * (d_gas / 2)^3 / sigma).
+    Bore suction (optional v_boost, m/s) is a velocity increment applied at
+    the gas zone, from bore_suction() below: the stream arrives faster and
+    thins by continuity (d_final = d_neck * sqrt(v_cap / (v_gas + v_boost))).
+    The total fall time is kept as computed above because the suction zone
+    (bore length) is short compared with the fall distance; the breakup
+    time is re-evaluated at the thinned diameter. Note the trade-off: the
+    boost shortens t_fall only slightly but shortens t_break a lot, so
+    suction can hurt fall survival even while it helps bore entry.
     C_break ~ 30 is the undisturbed-jet literature scale
     (ln(R / delta0) / 0.34); a disturbed jet breaks sooner, so this is the
     optimistic end. Thresholds (neck We 2 / 4, C_break) are heuristics and
@@ -273,6 +282,10 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0):
         t_fall = 0.0
     d_gas = d_neck * math.sqrt(v_cap / v_gas) if v_gas > 0 else d_neck
     t_break = C_break * math.sqrt(rho * (d_gas / 2.0) ** 3 / sig)
+    if v_boost and v_boost > 0.0:
+        v_gas = v_gas + v_boost
+        d_gas = d_neck * math.sqrt(v_cap / v_gas) if v_gas > 0 else d_neck
+        t_break = C_break * math.sqrt(rho * (d_gas / 2.0) ** 3 / sig)
     m_tate = 2.0 * math.pi * R_eff * sig / g
     tate_d = (6.0 * m_tate / (math.pi * rho)) ** (1.0 / 3.0) if rho > 0 else 0.0
     if We_neck < 2.0:
@@ -304,6 +317,51 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0):
             "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
             "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
             "t_break": t_break, "tate_d": tate_d}
+
+def bore_suction(d_stream_m, D_bore_m, m_dot_gas, rho_gas, rho_melt,
+                 dP_chamber_Pa):
+    """Bore suction at the nozzle bore entrance (Venturi + chamber dP).
+
+    The gas that enters the upper chamber must leave through the bore, so
+    it flows through the annulus between the bore wall and the melt stream.
+    When melt flows, the stream blocks part of the bore, the gas passage
+    narrows, the gas speeds up, and the suction on the stream grows: this
+    is the feedback the user described (suction is stronger while melt is
+    flowing than while it is not).
+
+    dP_venturi = 0.5 * rho_gas * (v_eff^2 - v_0^2), with v_0 the bore bulk
+    velocity without melt and v_eff the annulus velocity with the stream.
+    dP_total = dP_venturi + dP_chamber, converted to a melt velocity
+    increment by Bernoulli, v_boost = sqrt(2 * dP_total / rho_melt).
+
+    The incompressible Venturi formula is indicative while the bore Mach
+    number stays below ~1; at higher gas flows (bore bulk velocity near or
+    above sonic) it is an upper bound, because the bore itself chokes and
+    the pressure there rises above the chamber pressure. A_eff is floored
+    at 5% of the bore area so a stream as fat as the bore cannot drive
+    the velocity to infinity.
+    """
+    if D_bore_m is None or D_bore_m <= 0 or rho_melt is None or rho_melt <= 0:
+        return {"v_gas_bore": 0.0, "A_eff": 0.0, "dP_venturi": 0.0,
+                "dP_total": max(dP_chamber_Pa or 0.0, 0.0),
+                "v_boost": math.sqrt(2.0 * max(dP_chamber_Pa or 0.0, 0.0) / rho_melt)
+                if rho_melt and rho_melt > 0 else 0.0}
+    A_bore = math.pi / 4.0 * D_bore_m ** 2
+    d = max(d_stream_m or 0.0, 0.0)
+    A_s = math.pi / 4.0 * d ** 2
+    A_eff = max(A_bore - A_s, 0.05 * A_bore)
+    if m_dot_gas is None or m_dot_gas <= 0 or rho_gas is None or rho_gas <= 0:
+        v_gas_bore, dP_venturi = 0.0, 0.0
+    else:
+        v_0 = m_dot_gas / (rho_gas * A_bore)
+        v_gas_bore = m_dot_gas / (rho_gas * A_eff)
+        dP_venturi = 0.5 * rho_gas * (v_gas_bore ** 2 - v_0 ** 2)
+    dP_total = max(dP_venturi, 0.0) + max(dP_chamber_Pa or 0.0, 0.0)
+    v_boost = math.sqrt(2.0 * dP_total / rho_melt)
+    return {"v_gas_bore": v_gas_bore, "A_eff": A_eff,
+            "dP_venturi": max(dP_venturi, 0.0), "dP_total": dP_total,
+            "v_boost": v_boost}
+
 
 
 def apply_coil_taper(d0_m, v0, D_top_m, D_bottom_m, q=0.5):

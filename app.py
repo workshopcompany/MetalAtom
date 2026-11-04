@@ -805,14 +805,16 @@ with tab2:
     bottom_mm = max(L, z2) * 1000.0 + 8.0
     top_mm = min(zcrop * 1000.0, bottom_mm - 25.0)
     pitch_mm = (H / turns_h) * 1000.0 if turns_h > 0 else H * 1000.0
+    turn_y_mm = [(z1 + (i + 0.5) * (H / turns_h)) * 1000.0
+                 for i in range(int(turns_h))] if turns_h > 0 else []
+    if turn_y_mm:                                  # 1턴도 잘리지 않게 위쪽 범위를 늘림
+        top_mm = max(0.0, min(top_mm, min(turn_y_mm) - wire_w * 0.75 - 2.0))
     if wire_h > pitch_mm + 1e-9:
         st.warning(f"코일선 두께({wire_h:.1f} mm)가 턴 간격({pitch_mm:.1f} mm)보다 커서 "
                    "그림에서 턴이 겹칩니다. 선재 치수를 줄이거나 턴 수를 늘리세요.")
     shapes = []
-    for i in range(int(turns_h)):
-        zi = z1 + (i + 0.5) * (H / turns_h)
-        rc = clear_radius(zi) * 1000.0
-        yc = zi * 1000.0
+    for yc in turn_y_mm:
+        rc = clear_radius(yc / 1000.0) * 1000.0
         for sgn in (-1, 1):
             if sect_h == "원형":
                 shapes.append(dict(type="circle", layer="above",
@@ -900,6 +902,11 @@ with tab2:
                          showarrow=False, xanchor="right", yanchor="bottom",
                          font=dict(color="#6b5500", size=9),
                          bgcolor="rgba(255,255,255,0.85)"))
+    for i, yc in enumerate(turn_y_mm):             # 1턴 … N턴 번호
+        rc = clear_radius(yc / 1000.0) * 1000.0
+        anno.append(dict(x=rc + wire_w * 0.9, y=yc, xref="x", yref="y",
+                         text=str(i + 1), showarrow=False, xanchor="left",
+                         font=dict(color="#8a6d00", size=9)))
     if tip_molten:
         anno.append(dict(x=0.015, y=y_tip_mm + 5.0, xref="paper", yref="y",
                          text=i18n.tr(f"{anno_metal} (We {We_tip_m:.1f})"),
@@ -915,6 +922,8 @@ with tab2:
                    showgrid=False, scaleanchor="x", scaleratio=1, constrain="domain"),
         shapes=shapes, annotations=anno, plot_bgcolor="white")
     st.plotly_chart(fig, width="stretch")
+    st.caption(f"노란 원 {len(turn_y_mm)}개 = 코일 {int(turns_h)}턴 "
+               f"(턴 간격 {pitch_mm:.1f} mm). 노란 점선은 코일 내경 경로입니다.")
 
     fig2, ax2 = plt.subplots()
     ax2.plot(T_surf, z * 1000, label=i18n.tr("표면 온도"))
@@ -1038,6 +1047,16 @@ with tab2:
             fig3.add_trace(go.Scatter(x=_sgn * _cx, y=_cz, mode="lines",
                                       line=dict(color="#e8c400", dash="dot", width=1),
                                       name=i18n.tr("코일"), showlegend=_show, hoverinfo="skip"))
+        _ty = np.array([(z1 + (_i + 0.5) * (H / turns_h)) for _i in range(int(turns_h))])
+        _ty = _ty[_ty <= z[-1] + 1e-9]
+        if _ty.size:
+            _tx = np.array([clear_radius(zz) * 1000.0 for zz in _ty])
+            for _sgn, _show in ((-1, True), (1, False)):
+                fig3.add_trace(go.Scatter(x=_sgn * _tx, y=_ty * 1000.0, mode="markers",
+                                          marker=dict(color="#e8c400", size=8,
+                                                      line=dict(color="black", width=0.6)),
+                                          name=i18n.tr("코일 턴"), showlegend=_show,
+                                          hoverinfo="skip"))
         fig3.add_trace(go.Scatter(x=[float(_hx.min()), float(_hx.max())],
                                   y=[_zmm3[_i3], _zmm3[_i3]], mode="lines",
                                   line=dict(color="#ff4d4d", width=1.5, dash="dash"),

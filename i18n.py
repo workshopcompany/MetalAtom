@@ -934,3 +934,13 @@ EN.update({
         "The molten zone is shaded strictly by the liquidus isotherm. This model has no "
         "latent heat or melting front, so the surface temperature can overshoot the liquidus.",
 })
+
+EN.update({
+    "코일 턴": "Coil turns",
+})
+TERM.update({
+    "노란 원 ": "Yellow circles ",
+    "개 = 코일 ": " = coil ",
+    "턴 (턴 간격 ": " turns (pitch ",
+    " mm). 노란 점선은 코일 내경 경로입니다.": " mm). The dotted line is the coil inner-radius path.",
+})

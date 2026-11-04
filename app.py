@@ -18,6 +18,34 @@ import streamlit as st
 import physics as ph
 from materials import ALLOYS, GASES
 
+
+# ---------------------------------------------------------------- 한글 폰트
+def use_korean_font():
+    """matplotlib 그래프의 한글이 네모(□)로 깨지지 않도록 한글 폰트를 지정."""
+    from matplotlib import font_manager, rcParams
+
+    candidates = ["Malgun Gothic", "맑은 고딕", "Noto Sans KR", "Noto Sans CJK KR",
+                  "NanumGothic", "Gulim", "Batang", "Apple SD Gothic Neo"]
+    installed = {f.name for f in font_manager.fontManager.ttflist}
+    for name in candidates:
+        if name in installed:
+            rcParams["font.family"] = [name, "DejaVu Sans"]
+            rcParams["axes.unicode_minus"] = False
+            return name
+
+    # 폰트 캐시에 없을 때: 알려진 경로의 폰트 파일을 직접 등록
+    for path in (r"C:\Windows\Fonts\malgun.ttf",
+                 "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                 "/System/Library/Fonts/AppleSDGothicNeo.ttc"):
+        if os.path.exists(path):
+            font_manager.fontManager.addfont(path)
+            name = font_manager.FontProperties(fname=path).get_name()
+            rcParams["font.family"] = [name, "DejaVu Sans"]
+            rcParams["axes.unicode_minus"] = False
+            return name
+    return None
+
+
 st.set_page_config(page_title="MetalAtom — EIGA 아토마이저 시뮬레이터", layout="wide")
 st.title("MetalAtom")
 st.caption("EIGA 금속분말 아토마이저 시뮬레이터 — 오픈소스 간이 모델. "
@@ -121,6 +149,7 @@ with tab1:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    use_korean_font()
     ds = np.logspace(math.log10(1e-6), math.log10(500e-6), 300)
     cdf = [ph.lognormal_cdf(d, r["D50"], sig_g) for d in ds]
     fig, ax = plt.subplots()
@@ -534,6 +563,7 @@ with tab5:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    use_korean_font()
     r_grid = np.linspace(0.0, R, 25)
     x_full = np.concatenate([-r_grid[::-1], r_grid[1:]]) * 1000.0
     T_full = np.concatenate([Tg[:, ::-1], Tg[:, 1:]], axis=1) - 273.15

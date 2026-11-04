@@ -69,8 +69,9 @@ if "D50_um" not in st.session_state:
 if "sig_g" not in st.session_state:
     st.session_state["sig_g"] = 2.0
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["1 공정", "2 봉·코일", "3 노즐", "4 분말 품질", "코일 가열 보기", "사용법·한계"])
+tab1, tab2, tab3, tab4, tab5, tab_coil, tab6 = st.tabs(
+    ["1 공정", "2 봉·코일", "3 노즐", "4 분말 품질", "5 수율 계산",
+     "코일 가열 보기", "사용법·한계"])
 
 
 def lubanska_block(P_gas_bar, P_ch_bar, T_gas_K, T_melt_C, D_mm, GMR, K):
@@ -115,7 +116,8 @@ with tab1:
                                  float(alloy["T_liquidus"] - 273.15) + 50, 10.0)
         D_stream = st.number_input("용탕류 직경 (mm)", 0.5, 10.0, 3.0, 0.1)
         melt_flow = st.number_input("용탕 유량 (kg/min)", 0.1, 100.0,
-                                    float(st.session_state["melt_rate"]), 0.1)
+                                    float(st.session_state["melt_rate"]), 0.1,
+                                    key="melt_flow_t1")
         gas_area = st.number_input("가스 출구 면적 (mm²)", 1.0, 200.0, 20.0, 1.0)
     with c3:
         K = st.number_input("Lubanska 상수 K (장비 보정값)", 1.0, 200.0, 40.0, 1.0)
@@ -304,7 +306,8 @@ with tab3:
     with c3:
         m_dot_in = st.number_input("용탕 유량 (kg/min)",
                                    0.1, 100.0,
-                                   float(st.session_state["melt_rate"]), 0.1)
+                                   float(st.session_state["melt_rate"]), 0.1,
+                                   key="melt_flow_nozzle")
         v0 = st.number_input("용탕 초기 속도 (m/s)", 0.0, 10.0, 0.5, 0.1)
         Cd = st.number_input("노즐 유량계수 Cd", 0.5, 1.0, 0.9, 0.05)
 
@@ -444,8 +447,91 @@ with tab4:
     st.write("판정 근거: D50 20µm 이상, 미분 20% 미만, 구형화 완료 — 3개 중 충족 개수. "
              "실측(Hall flow 등)으로 검증이 필요한 추정치입니다.")
 
-# ---------------------------------------------------------------- tab 5
+# ---------------------------------------------------------------- tab 5 (수율)
 with tab5:
+    st.header("5. 수율 계산 — 합격 입도 범위로 공정 수율 구하기")
+    st.write("분말을 어느 입도 범위로 쓸지 정하면, 그 범위에 들어가는 질량분율이 곧 공정 수율입니다. "
+             "예를 들어 10~45 µm만 합격으로 보면, 전체 용탕 중 몇 %가 합격 분말이 되는지 바로 나옵니다. "
+             "아래 숫자는 모두 직접 수정할 수 있습니다.")
+
+    yc1, yc2 = st.columns(2)
+    with yc1:
+        y_dmin = st.number_input("합격 하한 (µm)", 0.0, 500.0, 10.0, 1.0)
+        y_dmax = st.number_input("합격 상한 (µm)", 0.0, 500.0, 45.0, 1.0)
+        y_melt = st.number_input("용탕 유량 (kg/min, 수율 환산 기준)", 0.1, 100.0,
+                                 round(float(st.session_state["melt_rate"]), 2), 0.05)
+    with yc2:
+        y_d50 = st.number_input("분포 D50 (µm)", 1.0, 500.0,
+                                round(float(st.session_state["D50_um"]), 1), 0.1)
+        y_sig = st.number_input("분포 폭 σg", 1.2, 4.0,
+                                float(st.session_state["sig_g"]), 0.1)
+        st.caption("기본값은 `1 공정` 탭의 계산 결과(D50·σg)입니다. "
+                   "실측 입도분석 값이 있으면 덮어쓰세요.")
+
+    if y_dmax <= y_dmin:
+        st.error("합격 상한이 하한보다 커야 합니다. 숫자를 다시 확인하세요.")
+    else:
+        d_lo, d_hi, d50y = y_dmin * 1e-6, y_dmax * 1e-6, y_d50 * 1e-6
+        frac_lo = ph.lognormal_cdf(d_lo, d50y, y_sig)          # 하한 미달
+        frac_hi = 1.0 - ph.lognormal_cdf(d_hi, d50y, y_sig)    # 상한 초과
+        yld_in = max(0.0, 1.0 - frac_lo - frac_hi)              # 합격 수율
+        y_kg_min = y_melt * yld_in
+        d10y, _, d90y = ph.D_values(d50y, y_sig)
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(f"합격 수율 ({y_dmin:.0f}~{y_dmax:.0f} µm)", f"{yld_in * 100:.1f} %")
+        m2.metric("미달 (너무 작음)", f"{frac_lo * 100:.1f} %")
+        m3.metric("과대 (너무 큼)", f"{frac_hi * 100:.1f} %")
+        m4.metric("합격 분말 생산량", f"{y_kg_min:.2f} kg/min")
+        st.caption(f"시간당 기준: 용탕 {y_melt * 60:.1f} kg/h 중 합격 분말 {y_kg_min * 60:.1f} kg/h. "
+                   f"참고 D10/D50/D90 = {d10y * 1e6:.1f} / {y_d50:.1f} / {d90y * 1e6:.1f} µm")
+
+        # 누적분포 + 합격 구간 표시
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        use_korean_font()
+        x_lo = max(0.5, y_dmin * 0.2) if y_dmin > 0 else 0.5
+        ds = np.logspace(math.log10(x_lo), math.log10(500.0), 300)
+        cdf = np.array([ph.lognormal_cdf(d * 1e-6, d50y, y_sig) for d in ds])
+        fig, ax = plt.subplots()
+        ax.plot(ds, cdf, color="#1f77b4", lw=1.8, label="누적 질량분율 (이 크기 이하)")
+        ax.axvspan(max(y_dmin, 0.5), y_dmax, color="#4c9be8", alpha=0.15,
+                   label=f"합격 구간 {y_dmin:.0f}~{y_dmax:.0f} µm")
+        ax.hlines(frac_lo, max(y_dmin, 0.5), y_dmax, color="#d62728", ls=":", lw=1.2)
+        ax.hlines(1.0 - frac_hi, max(y_dmin, 0.5), y_dmax, color="#d62728", ls=":", lw=1.2)
+        ax.annotate("", xy=(y_dmax, 1.0 - frac_hi), xytext=(y_dmax, frac_lo),
+                    arrowprops=dict(arrowstyle="<->", color="#d62728", lw=1.4))
+        ax.text(y_dmax * 1.12, (frac_lo + 1.0 - frac_hi) / 2.0,
+                f"수율 {yld_in * 100:.1f}%", color="#d62728", va="center", fontsize=10)
+        ax.set_xscale("log")
+        ax.set_xlabel("입자 직경 (µm)")
+        ax.set_ylabel("누적 질량분율")
+        ax.set_title("합격 구간이 전체 수율에서 차지하는 비율")
+        ax.grid(True, which="both", alpha=0.3)
+        ax.legend(loc="lower right", fontsize=9)
+        st.pyplot(fig)
+
+        st.subheader("구간별 분해")
+        st.dataframe({
+            "구간": [f"미달 (< {y_dmin:.0f} µm)",
+                     f"합격 ({y_dmin:.0f}~{y_dmax:.0f} µm)",
+                     f"과대 (> {y_dmax:.0f} µm)",
+                     "합계"],
+            "질량분율 (%)": [round(frac_lo * 100, 2), round(yld_in * 100, 2),
+                            round(frac_hi * 100, 2),
+                            round((frac_lo + yld_in + frac_hi) * 100, 2)],
+            "생산량 (kg/h)": [round(y_melt * 60 * frac_lo, 2),
+                             round(y_melt * 60 * yld_in, 2),
+                             round(y_melt * 60 * frac_hi, 2),
+                             round(y_melt * 60, 2)],
+        }, hide_index=True)
+        st.write("수율 = Φ[ln(상한/D50)/lnσg] − Φ[ln(하한/D50)/lnσg] (로그정규·질량 기준). "
+                 "합격 범위를 좁힐수록 수율은 떨어지고, D50을 합격 구간 가운데로 옮기면 수율이 올라갑니다. "
+                 "실제 공정 수율은 분급기 효율, 벽 부착, 산화·오염 손실 때문에 이 값보다 낮습니다.")
+
+# ---------------------------------------------------------------- 코일 가열 보기
+with tab_coil:
     st.header("코일 가열 보기 — 원뿔 코일 + 고주파 가열 단면")
     st.write("정면에서 보면 삼각형, 실제로는 아래로 좁아지는 원뿔(원뿔형 코일)입니다. "
              "깊이는 원뿔의 축방향 높이, 감은 횟수는 턴 수입니다. "
@@ -623,6 +709,7 @@ with tab6:
 3. `2 봉·코일`에서 용탕 생성량과 팁 이탈 모드(물방울/실)를 확인합니다.
 4. `3 노즐`에서 가스 유량·GMR·통과 시간을 보고 노즐 형상의 영향을 봅니다.
 5. `4 분말 품질`에서 응고 거리가 챔버 안에 들어가는지 확인합니다.
+6. `5 수율 계산`에서 합격 입도 범위(예: 10~45 µm)를 지정하면 그 범위가 전체 수율의 몇 %인지 나옵니다.
 
 **핵심 식**
 - Lubanska 상관식: D50/D = K·√[(νm/νg)·(1/We)·(1+M/A)], We는 용탕 밀도 기준

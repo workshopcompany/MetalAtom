@@ -149,6 +149,19 @@ def _sel(label, options, key, index=0, help=None):
     return st.selectbox(label, **kw)
 
 
+# 합금을 바꾸면 녹는점(액상선)이 달라지므로, 온도 관련 값을 새 합금 기준으로 다시 잡습니다.
+# (위젯 키가 세션에 남아 있으면 예전 온도가 그대로 유지되기 때문입니다.)
+if st.session_state.get("_alloy_seen") != alloy_name:
+    st.session_state["_alloy_seen"] = alloy_name
+    _tm_new = float(alloy["T_liquidus"] - 273.15) + 50.0
+    st.session_state["t1_tmelt"] = _tm_new
+    st.session_state["t2_tmelt"] = _tm_new
+    st.session_state["t4_tdrop"] = float(_clamp(_tm_new, 1000.0, 2500.0))
+    for _k in ("t1_tmelt", "t2_tmelt", "t4_tdrop"):
+        st.session_state["_p_" + _k] = None
+        st.session_state["_e_" + _k] = False
+
+
 def lubanska_block(P_gas_bar, P_ch_bar, T_gas_K, T_melt_C, D_mm, GMR, K):
     """공통 Lubanska 계산. dict로 반환."""
     T_melt_K = T_melt_C + 273.15

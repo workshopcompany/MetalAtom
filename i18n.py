@@ -500,14 +500,14 @@ DOCS = {
 6. In `5 Yield` set the acceptance size window (e.g. 10–45 µm) and see what share of the total yield falls inside it.
 7. In `Radiation` see how the hot body heats the surrounding wall over time.
 
-**Tip detachment mode (droplet vs thread) — why it splits**
-- The decision uses one number, the **tip Weber number** `We = ρ·v²·d/σ` (ρ melt density, v tip exit velocity, d tip bore diameter, σ surface tension).
-- It is **independent of whether the metal is molten**. Even when the tip is fully above the liquidus, a slow exit and a large bore mean inertia cannot overcome surface tension, so the melt hangs, pinches off and falls as **droplets** (`We < 4`).
-- A small bore or a high flow (velocity) gives a thin **thread** (`We > 12`). `4–12` is the transition band.
-- So the main cause of “whole blobs dripping” is **not the high-frequency settings but the exit velocity and bore diameter**. Local over-melting (low power, uneven melting) can also drop blobs, but this model assumes a uniformly molten tip and does not cover that case.
-- To move toward thread mode: smaller tip, higher coil power / feed rate (higher flow), smaller gap (better coupling), more superheat (lower σ).
-- **Viscosity** enters as `Oh = μ/√(ρ·σ·d)`. Higher viscosity raises the boundary We and widens the droplet side. For a mm-scale tip `Oh ≈ 0.002`, i.e. well under 1 % influence; it matters for micro-orifices or high-viscosity melts (slag, glass). **The current criterion uses We only (a known limitation).**
-- σ falls as temperature rises, so We rises: at the same flow, more superheat pushes toward thread mode.
+**Tip detachment mode (droplet vs thread) — why it splits (v2 falling-stream model)**
+- The decision has three stages. **Stage 1 — neck formation:** the tip is not a nozzle; melt pools there and detaches through a pendant neck. The stream diameter right after detachment follows from the mass balance at the capillary velocity `v_cap = √(σ/(ρ·R))`, and if the neck Weber number `We_neck = d_neck/R` is below 2, the tip drips droplets directly.
+- **Stage 2 — fall stretching:** over the tip-to-gas-zone distance the stream accelerates under gravity + gas drag + chamber ΔP suction and thins by continuity. A narrow tip alone does not make a thread — the stretching during the fall is the key step.
+- **Stage 3 — survival:** if the fall time `t_fall` exceeds the capillary breakup time scale `t_b ≈ 30·√(ρ·(d/2)³/σ)`, the column breaks before reaching the gas zone and arrives as droplets.
+- It is **independent of whether the metal is molten**. Even when the tip is fully above the liquidus, a neck that cannot hold together, or a column that breaks during the fall, gives droplet mode.
+- To move toward thread mode: higher melt flow (power/feed rate), shorter fall distance, stronger gas/ΔP acceleration, more superheat (lower σ).
+- **Viscosity** enters as `Oh = μ/√(ρ·σ·d)`. Higher viscosity widens the droplet side. For a mm-scale neck `Oh ≈ 0.002`, i.e. well under 1 % influence; it matters for micro-orifices or high-viscosity melts. **The current criterion uses neck We and fall time only (a known limitation).**
+- σ falls as temperature rises, so We_neck rises: at the same flow, more superheat pushes toward thread mode.
 
 **Radiation tab**
 - The hot body radiates to the wall as `q = ε·σ·A_hot·F·(T_hot⁴ − T_wall⁴)`.
@@ -519,7 +519,7 @@ DOCS = {
 - Lubanska correlation: D50/D = K·√[(νm/νg)·(1/We)·(1+M/A)], We based on melt density
 - Size distribution: log-normal (default σg = 2.0)
 - Gas: sonic jet under choked conditions; mass flow from the choked-flow equation
-- Tip detachment mode: heuristic (v1) — thresholds need calibration
+- Tip detachment mode: falling-stream model (v2) — thresholds need calibration
 
 **Limits (honestly)**
 - This is not CFD. Turbulence, flow inside the nozzle and real 3-D geometry are not solved.
@@ -532,13 +532,15 @@ DOCS = {
 - Load the target nozzle geometry as the first test case.
 - Extend the sweep/window search to nozzle geometry (bore, spray angle, slit form) combined with coil taper.
 """,
-    "droplet": """The decision uses one number, the **tip Weber number** `We = ρ·v²·d/σ` (ρ melt density, v tip exit velocity, d tip bore diameter, σ surface tension).
+    "droplet": """The decision has three stages (v2 falling-stream model).
 
-- **It is independent of whether the metal is molten.** Even when the tip is fully above the liquidus, a slow exit and a large bore mean inertia cannot beat surface tension, so the melt hangs, pinches off and falls as droplets (We < 4).
-- A small bore or a high flow (velocity) gives a thin **thread** (We > 12). 4–12 is the transition band.
-- So the main cause of “whole blobs dripping” is not the high-frequency settings but the exit velocity and bore diameter. Local over-melting (low power) can also drop blobs, but this model assumes a uniformly molten tip and does not cover that case.
-- To move toward thread mode: smaller tip, higher power/feed rate (higher flow), smaller gap, more superheat (lower σ).
-- Viscosity enters as `Oh = μ/√(ρ·σ·d)`. Higher viscosity raises the boundary We and widens the droplet side. For a mm-scale tip Oh ≈ 0.002 (under 1 % influence); it matters for micro-orifices and high-viscosity melts (current criterion uses We only — a limitation).""",
+- **Stage 1 — neck formation.** The tip is not a nozzle; melt pools there and detaches through a pendant neck. The stream diameter right after detachment follows from the mass balance at the capillary velocity `v_cap = √(σ/(ρ·R))`: `d_neck = √(4·m_dot/(π·ρ·v_cap))`. If the neck Weber number `We_neck = d_neck/R` is low (< 2), no continuous column survives and the tip drips droplets directly.
+- **Stage 2 — fall stretching.** Over the tip-to-gas-zone distance the stream accelerates under gravity + gas drag + chamber ΔP suction and thins by continuity (`v = √(v_cap² + 2·a·H)`, `d ∝ 1/√v`). A narrow tip alone does not make a thread — the stretching during the fall is the key step.
+- **Stage 3 — survival.** Whether the stream breaks up by capillary (Rayleigh-Plateau) instability before reaching the gas zone: if the fall time `t_fall` exceeds the breakup time scale `t_b ≈ 30·√(ρ·(d/2)³/σ)`, it arrives as droplets.
+- **It is independent of whether the metal is molten.** Even when the tip is fully above the liquidus, a neck that cannot hold together, or a column that breaks during the fall, gives droplet mode.
+- To move toward thread mode: higher melt flow (power/feed rate), shorter fall distance, stronger gas/ΔP acceleration, more superheat (lower σ).
+- Viscosity enters as `Oh = μ/√(ρ·σ·d)`. Higher viscosity widens the droplet side. For a mm-scale neck Oh ≈ 0.002 (under 1 % influence); it matters for micro-orifices and high-viscosity melts (current criterion uses neck We and fall time only — a limitation).
+- The v2 thresholds (neck We 2/4, breakup factor 30) are literature-scale heuristics and need calibration against equipment records.""",
 }
 
 _TERM_KEYS = None
@@ -740,11 +742,34 @@ EN.update({
         "Boundary between droplet and thread mode. Small changes can flip the mode, so process "
         "stability is poor here.",
 })
+EN.update({
+    "팁→가스 영역 낙하 거리 (mm)": "Tip-to-gas-zone fall distance (mm)",
+    "가스·압력차 추가 가속 (m/s²)": "Extra acceleration from gas drag + ΔP (m/s²)",
+    "넥 Weber 수가 낮아 팁에서 연속 기둥이 유지되지 못하고 물방울로 똑똑 떨어지는 경향. 분무가 불균일해져 입도분포가 넓어지고 굵은 입자/위성분말 위험이 큼.":
+        "Low neck Weber number: the tip cannot sustain a continuous column, so the melt drips as droplets. "
+        "Atomization becomes uneven, the size distribution widens and the risk of coarse particles/satellites grows.",
+    "팁에서는 연속류가 나오지만 낙하 거리가 길어 가스 영역에 닿기 전에 모세관 불안정성으로 끊어져 물방울이 되는 경향. 낙하 거리를 줄이거나 가스·압력차 가속을 키우면 실 쪽으로 갑니다.":
+        "A continuous stream leaves the tip, but the fall is long, so capillary instability breaks it into droplets "
+        "before it reaches the gas zone. Shorten the fall distance or raise the gas/ΔP acceleration to move toward thread mode.",
+    "넥 Weber 수가 경계에 있어 작은 조건 변화에도 모드가 바뀔 수 있는 구간. 공정 안정성이 떨어집니다.":
+        "Neck Weber number is at the boundary: small changes can flip the mode, so process stability is poor here.",
+    "넥이 연속 기둥을 유지하고 낙하 신장을 버텨 가스 영역까지 실처럼 도착하는 경향. 균일한 분무에 유리한 영역.":
+        "The neck sustains a continuous column and survives the fall stretching, arriving at the gas zone as a thread. "
+        "This is the favourable region for uniform atomization.",
+    "용탕 유량이 없어 류가 형성되지 않습니다.":
+        "No melt flow, so no stream forms.",
+})
 TERM.update({
     "droplet (물방울 모드)": "droplet",
     "thread (실 모드)": "thread",
     "transition (전이 영역)": "transition",
     "물방울 모드 (We": "droplet mode (We",
+    "넥 Weber 수": "neck Weber number",
+    "넥 지름": "neck diameter",
+    "넥 We": "neck We",
+    "가스 영역": "gas zone",
+    "펜던트 한 방울": "pendant drop",
+    "실(연속류) 모드": "thread (continuous) mode",
 })
 _TERM_KEYS = None
 

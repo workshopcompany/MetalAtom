@@ -217,6 +217,95 @@ def detachment_mode(We_tip, lo=4.0, hi=12.0):
             "공정 안정성이 떨어지는 구간.")
 
 
+def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0):
+    """Falling-stream detachment model (v2) for the rod tip.
+
+    Replaces the v1 tip-exit Weber criterion, which treated the tip as a
+    nozzle (v = m_dot / (rho * A_tip)). A melting rod tip is not a nozzle:
+    the melt pools at the tip and detaches through a pendant neck, and a
+    thread forms only if that neck survives the fall to the gas zone.
+
+    Stage 1 — neck at detachment. The stream leaves the tip through a neck
+    whose diameter follows from the mass balance at the capillary velocity
+    scale v_cap = sqrt(sigma / (rho * R_tip)):
+        d_neck = sqrt(4 * m_dot / (pi * rho * v_cap))
+    The neck Weber number We_neck = rho * v_cap^2 * d_neck / sigma reduces
+    to d_neck / R_tip. Below ~2 the neck cannot sustain a continuous column
+    and the tip drips (pendant drops, Tate scale ~ 2 * pi * R * sigma / g).
+
+    Stage 2 — fall stretching. Over the tip-to-gas-zone distance the stream
+    accelerates (gravity + gas drag + chamber dP suction, lumped into a_eff)
+    and thins by continuity:
+        v_gas = sqrt(v_cap^2 + 2 * a_eff * fall_m)
+        d_gas = d_neck * sqrt(v_cap / v_gas)
+        t_fall = (v_gas - v_cap) / a_eff
+
+    Stage 3 — survival. Rayleigh-Plateau breakup time at the gas-zone
+    diameter, t_b = C_break * sqrt(rho * (d_gas / 2)^3 / sigma).
+    C_break ~ 30 is the undisturbed-jet literature scale
+    (ln(R / delta0) / 0.34); a disturbed jet breaks sooner, so this is the
+    optimistic end. Thresholds (neck We 2 / 4, C_break) are heuristics and
+    still need calibration against ALD operating records.
+
+    Returns a dict with the numbers, the mode label (same "droplet" /
+    "transition" / "thread" prefixes the coil view's drawing logic keys on),
+    the gate that decided it, and a short explanation.
+    """
+    g = 9.81
+    sig = max(sigma, 0.1) if sigma is not None else 0.1
+    R_eff = max(R_tip, 0.0005)  # sharp tip (R = 0) behaves like a 1 mm neck scale
+    if m_dot is None or m_dot <= 0 or rho <= 0:
+        return {"mode": "droplet (물방울 모드)", "gate": "no-flow",
+                "explanation": "용탕 유량이 없어 류가 형성되지 않습니다.",
+                "v_cap": 0.0, "d_neck": 0.0, "We_neck": 0.0,
+                "v_gas": 0.0, "d_gas": 0.0, "t_fall": 0.0, "t_break": 0.0,
+                "tate_d": 0.0}
+    v_cap = math.sqrt(sig / (rho * R_eff))
+    d_neck = math.sqrt(4.0 * m_dot / (math.pi * rho * v_cap))
+    We_neck = d_neck / R_eff
+    a = a_eff if a_eff and a_eff > 0 else 0.0
+    fall = max(fall_m, 0.0)
+    if a > 0.0 and fall > 0.0:
+        v_gas = math.sqrt(v_cap ** 2 + 2.0 * a * fall)
+        t_fall = (v_gas - v_cap) / a
+    else:
+        v_gas = v_cap
+        t_fall = 0.0
+    d_gas = d_neck * math.sqrt(v_cap / v_gas) if v_gas > 0 else d_neck
+    t_break = C_break * math.sqrt(rho * (d_gas / 2.0) ** 3 / sig)
+    m_tate = 2.0 * math.pi * R_eff * sig / g
+    tate_d = (6.0 * m_tate / (math.pi * rho)) ** (1.0 / 3.0) if rho > 0 else 0.0
+    if We_neck < 2.0:
+        return {"mode": "droplet (물방울 모드)", "gate": "tip",
+                "explanation": "넥 Weber 수가 낮아 팁에서 연속 기둥이 유지되지 못하고 "
+                "물방울로 똑똑 떨어지는 경향. 분무가 불균일해져 입도분포가 넓어지고 "
+                "굵은 입자/위성분말 위험이 큼.",
+                "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
+                "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
+                "t_break": t_break, "tate_d": tate_d}
+    if t_fall > t_break:
+        return {"mode": "droplet (물방울 모드)", "gate": "fall",
+                "explanation": "팁에서는 연속류가 나오지만 낙하 거리가 길어 가스 영역에 닿기 전에 "
+                "모세관 불안정성으로 끊어져 물방울이 되는 경향. 낙하 거리를 줄이거나 "
+                "가스·압력차 가속을 키우면 실 쪽으로 갑니다.",
+                "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
+                "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
+                "t_break": t_break, "tate_d": tate_d}
+    if We_neck < 4.0:
+        return {"mode": "transition (전이 영역)", "gate": "marginal",
+                "explanation": "넥 Weber 수가 경계에 있어 작은 조건 변화에도 모드가 바뀔 수 있는 구간. "
+                "공정 안정성이 떨어집니다.",
+                "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
+                "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
+                "t_break": t_break, "tate_d": tate_d}
+    return {"mode": "thread (실 모드)", "gate": "survived",
+            "explanation": "넥이 연속 기둥을 유지하고 낙하 신장을 버텨 가스 영역까지 실처럼 도착하는 경향. "
+            "균일한 분무에 유리한 영역.",
+            "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
+            "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
+            "t_break": t_break, "tate_d": tate_d}
+
+
 def apply_coil_taper(d0_m, v0, D_top_m, D_bottom_m, q=0.5):
     """Funnel-coil focusing (v1 model).
 

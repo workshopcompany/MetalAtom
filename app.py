@@ -128,13 +128,35 @@ def _clamp(v, lo, hi):
 
 
 def _num(label, lo, hi, default, key, step=None, fmt=None, help=None, disabled=False):
-    """키가 고정된 숫자 입력. session_state 값을 먼저 채워 연동값이 들어가게 합니다."""
+    """키가 고정된 숫자 입력. session_state 값을 먼저 채워 연동값이 들어가게 합니다.
+
+    Streamlit은 number_input의 value/min_value/max_value/step가 모두 같은
+    타입(전부 int 또는 전부 float)이어야 합니다. 호출부가 int 범위 + float 스텝처럼
+    섞어서 넘겨도(예: 홀 개수 1, 100, 12, step 1.0) 여기서 하나로 통일합니다.
+    세션에 이미 들어 있는 값(이전 버전에서 남은 문자열 포함)도 같은 타입으로 강제
+    변환하고, 숫자로 바꿀 수 없으면 기본값으로 되돌립니다.
+    """
     ss = st.session_state
+    use_float = (isinstance(step, float)
+                 or any(isinstance(v, float) for v in (lo, hi, default)))
+
+    def _coerce(v, fallback):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return fallback
+        return f if use_float else int(f)
+
+    lo_c = _coerce(lo, 0)
+    hi_c = _coerce(hi, lo_c)
+    def_c = _clamp(_coerce(default, lo_c), lo_c, hi_c)
     if key not in ss:
-        ss[key] = float(_clamp(default, lo, hi))
-    kw = dict(min_value=lo, max_value=hi, key=key, help=help, disabled=disabled)
+        ss[key] = def_c
+    else:
+        ss[key] = _clamp(_coerce(ss[key], def_c), lo_c, hi_c)
+    kw = dict(min_value=lo_c, max_value=hi_c, key=key, help=help, disabled=disabled)
     if step is not None:
-        kw["step"] = step
+        kw["step"] = float(step) if use_float else int(step)
     if fmt:
         kw["format"] = fmt
     return st.number_input(label, **kw)
@@ -1237,7 +1259,7 @@ with tab3:
             coverage = 1.0
         else:
             pitch_d = _num("홀 피치 지름 (mm)", 5.0, 100.0, 30.0, "t3_pitch", 1.0)
-            n_holes = _num("홀 개수", 1, 100, 12, "t3_holes", 1.0)
+            n_holes = _num("홀 개수", 1, 100, 12, "t3_holes", 1)
             hole_d = _num("홀 지름 (mm)", 0.2, 5.0, 1.5, "t3_hole", 0.1)
             gas_area3 = ph.holes_area(int(n_holes), hole_d / 1000.0) * 1e6
             coverage = ph.jet_coverage(int(n_holes), hole_d / 1000.0, pitch_d / 1000.0)

@@ -90,7 +90,7 @@ _DEFAULTS = {
     "t1_dmin": 15.0, "t1_dmax": 40.0,
     # 2 봉·코일
     "t2_rod_d": 60.0, "t2_feed": 2.0, "t2_rpm": 60.0,
-    "t2_pcoil": 80.0, "t2_eff": 0.6, "t2_fall": 0.2,
+    "t2_pcoil": 80.0, "t2_eff": 0.6, "t2_fall_mm": 200.0,
     "t2_tmelt": float(alloy["T_liquidus"] - 273.15) + 50.0,
     "t2_lo": 4.0, "t2_hi": 12.0, "t2_q": 0.5,
     # 3 노즐
@@ -335,7 +335,7 @@ def _process_chain():
                        gmr, float(ss["t1_k"]))
     sig = float(ss["t1_sig"])
     d10, d50, d90 = ph.D_values(r["D50"], sig)
-    v_fall = math.sqrt(2.0 * 9.81 * float(ss["t2_fall"]))
+    v_fall = math.sqrt(2.0 * 9.81 * float(ss.get("t2_fall_mm", 200.0)) / 1000.0)
     ss["melt_rate"] = melt
     ss["D50_um"] = d50 * 1e6
     ss["sig_g"] = sig
@@ -519,7 +519,7 @@ with tab2:
                    f"자동 계산됩니다.")
     with c3:
         tip_shape = _sel("팁 형상", ["평탄", "둥근", "샤프"], "t2_tip")
-        fall_h = _num("팁→노즐 낙하 높이 (m)", 0.05, 1.0, 0.2, "t2_fall", 0.05)
+        fall_h = _num("팁→노즐 낙하 높이 (mm)", 50.0, 1000.0, 200.0, "t2_fall_mm", 10.0)
         T_melt2 = _num("용탕 온도 (°C) ",
                        float(alloy["T_liquidus"] - 273.15) - 50,
                        float(alloy["T_liquidus"] - 273.15) + 300,
@@ -533,7 +533,7 @@ with tab2:
 
     T_melt2_K = T_melt2 + 273.15
     m_dot = _CHAIN["m_dot"]        # 1 공정·2탭 입력으로 미리 계산한 값과 같은 값
-    v_fall = math.sqrt(2.0 * 9.81 * fall_h)
+    v_fall = math.sqrt(2.0 * 9.81 * fall_h / 1000.0)
     d_stream0 = ph.stream_diameter(m_dot, alloy["rho_melt"], v_fall)
     d_stream, v_eff = ph.apply_coil_taper(d_stream0, v_fall,
                                           coil_top / 1000.0, coil_bot / 1000.0,

@@ -92,7 +92,7 @@ EN = {
     "평탄": "Flat",
     "둥근": "Rounded",
     "샤프": "Sharp",
-    "팁→노즐 낙하 높이 (m)": "Tip → nozzle fall height (m)",
+    "팁→노즐 낙하 높이 (mm)": "Tip → nozzle fall height (mm)",
     "용탕 온도 (°C)": "Melt temperature (°C)",
     "이탈모드 하한 We": "Detachment lower We",
     "이탈모드 상한 We": "Detachment upper We",

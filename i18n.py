@@ -944,3 +944,22 @@ TERM.update({
     "턴 (턴 간격 ": " turns (pitch ",
     " mm). 노란 점선은 코일 내경 경로입니다.": " mm). The dotted line is the coil inner-radius path.",
 })
+
+EN.update({
+    "코일 결합 모델": "Coil coupling model",
+    "반경비² (기존)": "Radius ratio² (existing)",
+    "간극 기준 (신규)": "Gap-based (new)",
+    "기존 방식은 결합을 (봉 반경 / 코일 반경)² 으로 봅니다 — 가는 팁에서는 "
+    "결합이 급격히 약해져 꼭지점이 덜 녹습니다. "
+    "간극 기준은 원주 2πR 에 간극 효율 1/(1+(간극/코일 반경)²) 을 곱해, "
+    "표면적이 있는 만큼은 가열되도록 봅니다. 결과는 아래에 나란히 표시됩니다.":
+        "The existing model weights coupling by (rod radius / coil radius)² — on a thin tip "
+        "the coupling collapses, so the apex melts less. The gap-based model multiplies the "
+        "circumference 2πR by a gap efficiency 1/(1+(gap/coil radius)²), so the surface area "
+        "that exists is actually heated. Both results are shown below.",
+})
+TERM.update({
+    "결합 모델 비교 — ": "Coupling model comparison — ",
+    "팁 표면 ": "tip surface ",
+    "용융 캡 ": "melt cap ",
+})

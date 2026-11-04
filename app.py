@@ -581,6 +581,11 @@ with tab2:
         coil_gap = _num("코일–봉 간극 (mm)", 1.0, 50.0, 20.0, "g_gap", 1.0,
                         help="코일 내면과 봉 표면 사이 거리. '봉 형상 따라가기'에서는 코일 내경을 "
                              "봉 지름 + 간극 2배로 잡고, 다른 형상에서도 최소 간극으로 적용됩니다.")
+        couple_mode = _sel("코일 결합 모델", ["반경비² (기존)", "간극 기준 (신규)"], "g_couple",
+                           help="기존 방식은 결합을 (봉 반경 / 코일 반경)² 으로 봅니다 — 가는 팁에서는 "
+                                "결합이 급격히 약해져 꼭지점이 덜 녹습니다. "
+                                "간극 기준은 원주 2πR 에 간극 효율 1/(1+(간극/코일 반경)²) 을 곱해, "
+                                "표면적이 있는 만큼은 가열되도록 봅니다. 결과는 아래에 나란히 표시됩니다.")
         sect_h = _sel("코일 단면 형상", ["원형", "직사각형"], "g_sect",
                       help="실제 유도 코일은 보통 원형 단면(동관·동선)입니다. "
                            "단면 형상과 무관하게 코일 위치·출력 계산은 동일합니다.")
@@ -668,13 +673,21 @@ with tab2:
     k_th = alloy["k_thermal"]
     delta = ph.skin_depth(alloy["rho_e"], freq * 1000.0)
 
-    def solve_heat(rc_func):
-        """코일 반경 함수 → 봉 단면 온도장 (Nz x Nr)."""
+    def solve_heat(rc_func, couple="ratio"):
+        """코일 반경 함수 → 봉 단면 온도장 (Nz x Nr).
+
+        couple="ratio": 결합 ∝ (봉 반경 / 코일 반경)²  — 기존 방식
+        couple="gap":   결합 ∝ 원주 2πR × 1/(1 + (간극/코일 반경)²) — 간극 기준
+        """
         w2 = np.zeros(Nz)
         for i, zz in enumerate(z):
             if z1 <= zz <= z2:
                 rc = max(rc_func(zz), Rz[i] * 1.02)
-                w2[i] = (Rz[i] / rc) ** 2     # 가까운 코일일수록 결합이 세짐
+                if couple == "gap":
+                    gap_i = max(rc - Rz[i], 1e-6)
+                    w2[i] = (2.0 * math.pi * Rz[i]) / (1.0 + (gap_i / rc) ** 2)
+                else:
+                    w2[i] = (Rz[i] / rc) ** 2     # 가까운 코일일수록 결합이 세짐
         w2 = w2 * ripple
         s = w2.sum()
         qp = P_rod * w2 / (s * dz) if s > 0 else np.zeros(Nz)
@@ -685,9 +698,11 @@ with tab2:
         Tg, _ = ph.radial_temperature_field_var(Tax, qp, Rz, delta, k_th, Nr=33)
         return Tg
 
-    Tg = solve_heat(coil_radius)
+    couple_key = "gap" if couple_mode == "간극 기준 (신규)" else "ratio"
+    Tg = solve_heat(coil_radius, couple_key)
     r_sc = coil_radius(z1)           # 같은 상부 내경의 직선 코일 기준값
-    Tg_s = solve_heat(lambda zz: r_sc)
+    Tg_s = solve_heat(lambda zz: r_sc, couple_key)
+    Tg_alt = solve_heat(coil_radius, "ratio" if couple_key == "gap" else "gap")
     T_surf = Tg[:, -1] - 273.15
     T_cent = Tg[:, 0] - 273.15
     T_liq_C = alloy["T_liquidus"] - 273.15
@@ -704,6 +719,9 @@ with tab2:
     melt_len = melt_len_from_tip(T_surf)
     tip_C = T_surf[-1]
     tip_molten = tip_C >= T_liq_C
+    _alt_surf_C = Tg_alt[:, -1] - 273.15
+    alt_tip_C = float(_alt_surf_C[-1])
+    alt_melt_len = melt_len_from_tip(_alt_surf_C)
     if tip_C > T_feed_h:
         P_min = P_coil_h * (T_liq_C - T_feed_h) / (tip_C - T_feed_h)
     else:
@@ -746,6 +764,12 @@ with tab2:
                f"길이 {H * 1000:.0f} mm·{turns_h}턴, "
                f"코일은 팁 기준 {coil_start:+.0f} mm ~ {coil_end:+.0f} mm (+위/−아래). "
                f"봉 길이 {L * 1000:.0f} mm, 코일 상단은 봉 위에서 {shank:.0f} mm 내려온 지점입니다.")
+    _alt_name = i18n.tr("반경비² (기존)" if couple_key == "gap" else "간극 기준 (신규)")
+    st.caption(i18n.tr("결합 모델 비교 — ")
+               + i18n.tr(couple_mode) + f": {i18n.tr('팁 표면 ')}{tip_C:.0f} °C, "
+               + f"{i18n.tr('용융 캡 ')}{melt_len:.0f} mm  |  " + _alt_name + f": "
+               + f"{i18n.tr('팁 표면 ')}{alt_tip_C:.0f} °C, "
+               + f"{i18n.tr('용융 캡 ')}{alt_melt_len:.0f} mm")
     if tip_molten:
         st.success(f"팁 표면이 액상선 이상입니다. 용탕 생성 가능 — 이탈 모드: {mode_m} "
                    f"(팁 Weber 수 {We_tip_m:.1f}, 류 직경 {d_exit_m * 1000:.2f} mm, "
@@ -807,8 +831,8 @@ with tab2:
     pitch_mm = (H / turns_h) * 1000.0 if turns_h > 0 else H * 1000.0
     turn_y_mm = [(z1 + (i + 0.5) * (H / turns_h)) * 1000.0
                  for i in range(int(turns_h))] if turns_h > 0 else []
-    if turn_y_mm:                                  # 1턴도 잘리지 않게 위쪽 범위를 늘림
-        top_mm = max(0.0, min(top_mm, min(turn_y_mm) - wire_w * 0.75 - 2.0))
+    if turn_y_mm:                                  # 위쪽 코일 위치보다 10 mm 더 보이게
+        top_mm = max(0.0, min(top_mm, min(turn_y_mm) - 10.0))
     if wire_h > pitch_mm + 1e-9:
         st.warning(f"코일선 두께({wire_h:.1f} mm)가 턴 간격({pitch_mm:.1f} mm)보다 커서 "
                    "그림에서 턴이 겹칩니다. 선재 치수를 줄이거나 턴 수를 늘리세요.")
@@ -862,7 +886,7 @@ with tab2:
                            line=dict(color="#cf1d1d", width=0.8, dash="dot")))
     zc = np.linspace(z1, z2, 60)
     rc_curve = np.array([clear_radius(zz) for zz in zc]) * 1000.0
-    xmax = max(float(rc_curve.max()), float(Rk.max())) * 1.35
+    xmax = max(float(rc_curve.max()), float(Rk.max())) + 10.0   # 코일 바깥 10 mm 여유
     for _zz in (z_start, z_end):
         shapes.append(dict(type="line", layer="above", xref="paper", yref="y",
                            x0=0.0, x1=1.0, y0=_zz * 1000.0, y1=_zz * 1000.0,

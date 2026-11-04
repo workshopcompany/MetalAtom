@@ -150,6 +150,25 @@ def yield_in_range(D50, sigma_g, d_min, d_max):
     return lognormal_cdf(d_max, D50, sigma_g) - lognormal_cdf(d_min, D50, sigma_g)
 
 
+def mean_diameter_in_range(D50, sigma_g, d_min, d_max):
+    """Mass-weighted mean diameter (m) of the fraction inside [d_min, d_max].
+
+    E[d | d_min <= d <= d_max] for the lognormal mass distribution:
+    exp(mu + sigma^2/2) * [Phi(z_hi) - Phi(z_lo)] / mass fraction in range,
+    with z = (ln d - mu - sigma^2) / sigma.
+    """
+    if D50 <= 0 or sigma_g <= 1.0 or d_max <= d_min:
+        return 0.0
+    mu = math.log(D50)
+    sig = math.log(sigma_g)
+    frac = yield_in_range(D50, sigma_g, d_min, d_max)
+    if frac <= 0.0:
+        return 0.0
+    z_lo = 0.0 if d_min <= 0 else _phi((math.log(d_min) - mu - sig ** 2) / sig)
+    z_hi = _phi((math.log(d_max) - mu - sig ** 2) / sig)
+    return math.exp(mu + 0.5 * sig ** 2) * (z_hi - z_lo) / frac
+
+
 # ---------------------------------------------------------------- rod & coil (EIGA)
 def melt_rate_from_power(P_kW, efficiency, alloy, T_melt_K, T_feed_K=300.0):
     """Melt mass rate (kg/s) from a power balance.
@@ -428,6 +447,71 @@ def radial_temperature_field(T_ax, q_prime, R, delta, k, Nr=25):
     return T_grid, r
 
 
+def rod_descent_temperature_var(z, q_prime, v_feed, rho, cp, T_feed, T_melt, Lf,
+                                R_z, h_conv=50.0, eps=0.8, T_amb=300.0):
+    """rod_descent_temperature for a body whose radius varies with depth (cone tip).
+
+    Same Lagrangian energy balance, but the cross-section shrinks along the
+    cone: mass conservation gives rho*A(z)*v(z) = rho*A0*v_feed, so the local
+    velocity grows as the area shrinks, while the radiating perimeter is the
+    local one. Net effect: the cone tip heats with less thermal mass but
+    loses more per unit mass, so a too-shallow cone can be cooler than a
+    straight rod at the same power.
+    """
+    import numpy as np
+    sigma = 5.67e-8
+    Nz = len(z)
+    R0 = R_z[0]
+    T = np.zeros(Nz)
+    e_melt = cp * (T_melt - T_feed)
+    e_liq = e_melt + Lf
+    e = 0.0
+    for i in range(Nz):
+        if e < e_melt:
+            Ti = T_feed + e / cp
+        elif e < e_liq:
+            Ti = T_melt
+        else:
+            Ti = T_melt + (e - e_liq) / cp
+        T[i] = Ti
+        if i < Nz - 1:
+            dz = z[i + 1] - z[i]
+            r = R_z[i]
+            A = math.pi * r ** 2
+            v = v_feed * (R0 / r) ** 2 if r > 0 else v_feed
+            loss = 2.0 * math.pi * r * (
+                h_conv * (Ti - T_amb) + eps * sigma * (Ti ** 4 - T_amb ** 4))
+            de = (q_prime[i] - loss) * dz / (rho * A * v) \
+                if (v_feed > 0 and A > 0 and v > 0) else 0.0
+            e = max(e + de, 0.0)
+    return T
+
+
+def radial_temperature_field_var(T_ax, q_prime, R_z, delta, k, Nr=25):
+    """radial_temperature_field for a radius that varies with z (cone tip).
+
+    The radial grid is normalized (xi = r / R(z)), so column 0 is the axis and
+    column Nr-1 is the surface for every row. The skin-layer excess uses the
+    local surface flux q'/(2*pi*R(z)) and local radius; each row is corrected
+    so its area-weighted mean equals the axial model temperature T_ax.
+    """
+    import numpy as np
+    Nz = len(T_ax)
+    xi = np.linspace(0.0, 1.0, Nr)
+    T_grid = np.zeros((Nz, Nr))
+    for i in range(Nz):
+        r = R_z[i]
+        if r <= 0 or k <= 0:
+            T_grid[i] = T_ax[i]
+            continue
+        q_surf = q_prime[i] / (2.0 * math.pi * r)
+        excess = q_surf * delta / k
+        prof = np.exp(-(r - xi * r) / delta) if delta > 0 else np.zeros(Nr)
+        mean = float(2.0 * np.trapezoid(xi * prof, xi))
+        T_grid[i] = T_ax[i] + excess * (prof - mean)
+    return T_grid, xi
+
+
 def transit_velocity(v0, deltaP_Pa, rho):
     """Melt velocity after a pressure-difference driven passage (m/s)."""
     return math.sqrt(v0 ** 2 + 2.0 * max(deltaP_Pa, 0.0) / rho)
@@ -458,3 +542,78 @@ def droplet_cooling_time(d_m, rho_m, cp_m, Lf, T0_K, T_gas_K,
     dT_lat = max(T_solid_K - T_gas_K, 1.0)
     t_lat = rho_m * Lf * d_m / (6.0 * h * dT_lat)
     return t_sens + t_lat
+
+
+# ---------------------------------------------------------------- thermal radiation
+SIGMA_SB = 5.670374419e-8
+
+
+def radiation_heat_flux(T_hot_K, T_surr_K, eps=0.8):
+    """Net radiative heat flux (W/m2) from a hot surface to a cooler one."""
+    return eps * SIGMA_SB * (T_hot_K ** 4 - T_surr_K ** 4)
+
+
+def wall_temperature_transient(T_hot_K, T_wall0_K, T_gas_K, area_hot, area_wall,
+                               view_factor=0.3, eps=0.8, thick_m=0.005,
+                               rho_w=7900.0, cp_w=500.0, h_conv=10.0,
+                               h_out=50.0, t_end=600.0, n_out=300,
+                               T_amb_K=298.15, n_steps=4000):
+    """Surrounding wall temperature vs time under radiation from a hot body.
+
+    Lumped-capacitance wall node (uniform temperature across the thickness):
+        m cp dT/dt = eps*sig*A_hot*F*(T_hot^4 - T_w^4)
+                     - h_conv*A_wall*(T_w - T_gas)
+                     - h_out*A_wall*(T_w - T_amb)
+                     - eps*sig*A_wall*(T_w^4 - T_amb^4)
+
+    The wall absorbs radiation from the rod/coil, and loses heat on its outer
+    side by cooling (h_out, e.g. water jacket) and by re-radiation. Steady
+    state is found by bisection on the energy balance.
+
+    Returns (t_s, T_wall_C, Q_rad_W, T_eq_C, t90_s); t90 = time to reach 90 %
+    of the rise from the initial temperature to the steady state.
+    """
+    import numpy as np
+    m_cp = max(rho_w * max(thick_m, 1e-4) * max(area_wall, 1e-6) * cp_w, 1.0)
+
+    def balance(T_w):
+        q_in = eps * SIGMA_SB * area_hot * view_factor * (T_hot_K ** 4 - T_w ** 4)
+        q_loss = (h_conv * (T_w - T_gas_K) + h_out * (T_w - T_amb_K)) * area_wall
+        q_loss += eps * SIGMA_SB * area_wall * (T_w ** 4 - T_amb_K ** 4)
+        return q_in - q_loss
+
+    lo, hi = min(T_amb_K, T_gas_K), max(T_hot_K, T_amb_K) + 1.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if balance(mid) > 0.0:
+            lo = mid
+        else:
+            hi = mid
+    T_eq = 0.5 * (lo + hi)
+
+    q0 = abs(balance(T_wall0_K))
+    dt_stable = 0.25 * m_cp / max(q0 / max(abs(T_eq - T_wall0_K), 1.0), 1e-3)
+    n = int(min(max(n_steps, t_end / max(dt_stable, 1e-3) * 4.0), 400000))
+    dt = t_end / n
+    T = float(T_wall0_K)
+    t_out = np.linspace(0.0, t_end, int(n_out))
+    T_out = np.empty_like(t_out)
+    Q_out = np.empty_like(t_out)
+    k = 0
+    for i in range(n + 1):
+        if k < len(t_out) and i * dt >= t_out[k] - 1e-12:
+            T_out[k] = T
+            Q_out[k] = eps * SIGMA_SB * area_hot * view_factor * (T_hot_K ** 4 - T ** 4)
+            k += 1
+            if k >= len(t_out):
+                break
+        T += dt * balance(T) / m_cp
+        if T < 0.0:
+            T = 0.0
+
+    t90 = float(t_end)
+    target = T_wall0_K + 0.9 * (T_eq - T_wall0_K)
+    hit = np.where(T_out >= target)[0]
+    if len(hit):
+        t90 = float(t_out[hit[0]])
+    return t_out, T_out - 273.15, Q_out, T_eq - 273.15, t90

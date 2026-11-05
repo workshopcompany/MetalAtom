@@ -58,8 +58,14 @@ st.caption("EIGA 금속분말 아토마이저 시뮬레이터 — 오픈소스 �
 # ---------------------------------------------------------------- sidebar
 i18n.language_switch(st.sidebar)
 st.sidebar.header("공통 설정")
-alloy_name = st.sidebar.selectbox("합금", list(ALLOYS.keys()), index=0)
-gas_name = st.sidebar.selectbox("분무 가스", list(GASES.keys()), index=0)
+# 조건 불러오기로 합금/가스를 바꿀 수 있게 선택박스에 키를 둔다.
+# 키를 새로 단 첫 실행에는 이전에 본 합금(_alloy_seen)을 이어받아 선택이 초기화되지 않게 한다.
+if "sel_alloy" not in st.session_state and st.session_state.get("_alloy_seen") in ALLOYS:
+    st.session_state["sel_alloy"] = st.session_state["_alloy_seen"]
+if "sel_gas" not in st.session_state:
+    st.session_state["sel_gas"] = list(GASES.keys())[0]
+alloy_name = st.sidebar.selectbox("합금", list(ALLOYS.keys()), index=0, key="sel_alloy")
+gas_name = st.sidebar.selectbox("분무 가스", list(GASES.keys()), index=0, key="sel_gas")
 alloy = ALLOYS[alloy_name]
 gas = GASES[gas_name]
 R_gas = 8.314 / gas["M"]
@@ -134,6 +140,194 @@ if "fall_mm" not in st.session_state:
         st.session_state["fall_mm"] = st.session_state["g_fall"]
     else:
         st.session_state["fall_mm"] = 200.0
+
+
+# ---------------------------------------------------------------- 조건 저장/불러오기
+# 공정 조건(합금·가스·1공정·2봉코일·코일형상·3노즐·4분말·복사열)을 이름+메모와 함께
+# presets.json 파일에 저장하고, 목록에서 골라 불러온다. 파일이 있으면 매 실행마다
+# 읽어오므로 새로 받은 파일이 바로 목록에 보인다. 저장할 때마다 .bak 백업을 남긴다.
+import json as _json
+import os as _os
+
+_PRESET_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "presets.json")
+_PRESET_KEYS = ([k for k in _DEFAULTS
+                 if k not in ("t1_tmelt", "t2_tmelt", "t2_fall_mm", "h_sync")]
+                + ["fall_mm", "sel_alloy", "sel_gas"])
+
+
+def _load_presets_from_disk():
+    try:
+        with open(_PRESET_FILE, "r", encoding="utf-8") as _f:
+            _data = _json.load(_f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(_data, list):
+        return None
+    _out = []
+    for _p in _data:
+        if isinstance(_p, dict) and isinstance(_p.get("values"), dict) and _p.get("title"):
+            _out.append({"title": str(_p["title"]),
+                         "memo": str(_p.get("memo", "")),
+                         "values": dict(_p["values"])})
+    return _out
+
+
+def _save_presets_to_disk(presets):
+    try:
+        if _os.path.exists(_PRESET_FILE):
+            _os.replace(_PRESET_FILE, _PRESET_FILE + ".bak")
+        with open(_PRESET_FILE, "w", encoding="utf-8") as _f:
+            _json.dump(presets, _f, ensure_ascii=False, indent=2)
+        return True
+    except OSError:
+        return False
+
+
+def _preset_clean_value(v):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float, str)):
+        return v
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _preset_summary(values):
+    _alloy = values.get("sel_alloy", "?")
+    _p = values.get("t2_pcoil", "?")
+    _f = values.get("t2_feed", "?")
+    _tip = values.get("g_tip", "?")
+    _fall = values.get("fall_mm", "?")
+    _bore = values.get("t3_bore", "?")
+    return f"{_alloy} · {_p}kW · 공급 {_f}mm/s · 팁 Ø{_tip} · 낙하 {_fall}mm · 보어 Ø{_bore}"
+
+
+_disk_presets = _load_presets_from_disk()
+if _disk_presets is not None:
+    st.session_state["presets"] = _disk_presets
+if "presets" not in st.session_state:
+    st.session_state["presets"] = []
+
+
+def _preset_save_current():
+    _ss = st.session_state
+    _title = str(_ss.get("preset_new_title", "")).strip()
+    _presets = list(_ss.get("presets", []))
+    if not _title:
+        _title = f"조건 {len(_presets) + 1}"
+    _values = {k: _preset_clean_value(_ss[k]) for k in _PRESET_KEYS if k in _ss}
+    _presets.append({"title": _title, "memo": str(_ss.get("preset_new_memo", "")),
+                     "values": _values})
+    if _save_presets_to_disk(_presets):
+        _ss["presets"] = _presets
+        _ss["preset_msg"] = f"저장했습니다: {_title}"
+    else:
+        _ss["preset_msg"] = "저장에 실패했습니다 (presets.json 쓰기 오류)."
+    _ss["preset_new_title"] = ""
+    _ss["preset_new_memo"] = ""
+
+
+def _preset_load_selected():
+    _ss = st.session_state
+    _presets = list(_ss.get("presets", []))
+    _idx = _ss.get("preset_select", 0)
+    if not _presets or _idx is None or int(_idx) >= len(_presets):
+        return
+    _p = _presets[int(_idx)]
+    for _k, _v in _p["values"].items():
+        _ss[_k] = _v
+    _ss["preset_edit_title"] = _p["title"]
+    _ss["preset_edit_memo"] = _p.get("memo", "")
+    _ss["preset_msg"] = f"불러왔습니다: {_p['title']}"
+
+
+def _preset_select_changed():
+    _ss = st.session_state
+    _presets = list(_ss.get("presets", []))
+    _idx = _ss.get("preset_select", 0)
+    if _presets and _idx is not None and int(_idx) < len(_presets):
+        _p = _presets[int(_idx)]
+        _ss["preset_edit_title"] = _p["title"]
+        _ss["preset_edit_memo"] = _p.get("memo", "")
+
+
+def _preset_update_meta():
+    _ss = st.session_state
+    _presets = list(_ss.get("presets", []))
+    _idx = _ss.get("preset_select", 0)
+    if not _presets or _idx is None or int(_idx) >= len(_presets):
+        return
+    _presets[int(_idx)]["title"] = str(_ss.get("preset_edit_title", "")).strip() or _presets[int(_idx)]["title"]
+    _presets[int(_idx)]["memo"] = str(_ss.get("preset_edit_memo", ""))
+    if _save_presets_to_disk(_presets):
+        _ss["presets"] = _presets
+        _ss["preset_msg"] = "제목/메모를 저장했습니다."
+    else:
+        _ss["preset_msg"] = "저장에 실패했습니다 (presets.json 쓰기 오류)."
+
+
+def _preset_delete_selected():
+    _ss = st.session_state
+    _presets = list(_ss.get("presets", []))
+    _idx = _ss.get("preset_select", 0)
+    if not _presets or _idx is None or int(_idx) >= len(_presets):
+        return
+    _title = _presets[int(_idx)]["title"]
+    del _presets[int(_idx)]
+    if _save_presets_to_disk(_presets):
+        _ss["presets"] = _presets
+        _ss["preset_msg"] = f"삭제했습니다: {_title}"
+    else:
+        _ss["preset_msg"] = "삭제 저장에 실패했습니다 (presets.json 쓰기 오류)."
+    _ss["preset_delete_armed"] = False
+    _ss["preset_select"] = 0
+    if _presets:
+        _ss["preset_edit_title"] = _presets[0]["title"]
+        _ss["preset_edit_memo"] = _presets[0].get("memo", "")
+    else:
+        _ss["preset_edit_title"] = ""
+        _ss["preset_edit_memo"] = ""
+
+
+st.sidebar.header("조건 저장 / 불러오기")
+if st.session_state.get("preset_msg"):
+    st.sidebar.success(st.session_state["preset_msg"])
+    st.session_state["preset_msg"] = ""
+_presets_now = list(st.session_state.get("presets", []))
+st.sidebar.text_input("새 조건 제목", key="preset_new_title")
+st.sidebar.text_area("새 조건 메모", key="preset_new_memo")
+st.sidebar.button("현재 조건 저장", on_click=_preset_save_current)
+if _presets_now:
+    st.sidebar.selectbox("불러올 조건", options=list(range(len(_presets_now))),
+                         format_func=lambda i: _presets_now[i]["title"],
+                         key="preset_select", on_change=_preset_select_changed)
+    _sel_idx = st.session_state.get("preset_select", 0)
+    if _sel_idx is None or int(_sel_idx) >= len(_presets_now):
+        _sel_idx = 0
+    _sel = _presets_now[int(_sel_idx)]
+    if "preset_edit_title" not in st.session_state:
+        st.session_state["preset_edit_title"] = _sel["title"]
+    if "preset_edit_memo" not in st.session_state:
+        st.session_state["preset_edit_memo"] = _sel.get("memo", "")
+    st.sidebar.caption(_preset_summary(_sel["values"]))
+    if _sel.get("memo"):
+        st.sidebar.caption(_sel["memo"])
+    st.sidebar.button("불러오기", on_click=_preset_load_selected)
+    st.sidebar.text_input("제목 수정", key="preset_edit_title")
+    st.sidebar.text_area("메모 수정", key="preset_edit_memo")
+    st.sidebar.button("제목/메모 저장", on_click=_preset_update_meta)
+    if st.session_state.get("preset_delete_armed"):
+        st.sidebar.warning("정말 삭제할까요?")
+        st.sidebar.button("삭제 확인", on_click=_preset_delete_selected)
+        if st.sidebar.button("삭제 취소"):
+            st.session_state["preset_delete_armed"] = False
+    else:
+        if st.sidebar.button("선택한 조건 삭제"):
+            st.session_state["preset_delete_armed"] = True
+else:
+    st.sidebar.caption("저장된 조건이 없습니다. 위에서 현재 조건을 저장하세요.")
 
 
 def _clamp(v, lo, hi):

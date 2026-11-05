@@ -94,7 +94,7 @@ _DEFAULTS = {
     "t2_tmelt": float(alloy["T_liquidus"] - 273.15) + 50.0,
     "t2_lo": 4.0, "t2_hi": 12.0, "t2_q": 0.5,
     # 3 노즐
-    "t3_bore": 10.0, "t3_blen": 20.0, "t3_angle": 30.0,
+    "t3_bore": 18.0, "t3_blen": 20.0, "t3_angle": 30.0,
     "t3_pitch": 30.0, "t3_slit": 0.5, "t3_holes": 12.0, "t3_hole": 1.5,
     "t3_dp": 0.5, "t3_v0": 0.5, "t3_cd": 0.9, "t3_exit": 10.0,
     # 4 분말 품질
@@ -818,7 +818,7 @@ with tab2:
     # 가스가 빨라지고 흡입이 커지는 벤투리 피드백 + 챔버 압력차. 흡입은 낙하 말단에서
     # 작용하므로 낙하 시간은 그대로 두고 보어 입구 속도만 높이고 류는 가늘어진다.
     _ss = st.session_state
-    _D_bore = float(_ss.get("t3_bore", 10.0)) / 1000.0
+    _D_bore = float(_ss.get("t3_bore", 18.0)) / 1000.0
     _dP_ch = float(_ss.get("t3_dp", 0.5)) * 1e5
     _Pc = float(_ss.get("t3_pc", 1.5)) * 1e5
     _rho_gas = _Pc / (R_gas * 300.0) if R_gas > 0 else 0.0
@@ -1288,7 +1288,9 @@ with tab3:
              "그 통과 구간에서 노즐 고압가스에 맞아 분쇄됩니다.")
     c1, c2, c3 = st.columns(3)
     with c1:
-        bore_d = _num("노즐 보어 지름 (mm)", 0.5, 20.0, 10.0, "t3_bore", 0.1)
+        bore_d = _num("노즐 보어 지름 (mm)", 0.5, 20.0, 18.0, "t3_bore", 0.1)
+        if bore_d <= 16.0:
+            st.warning("노즐 보어가 16mm 이하이면 막힘 위험이 있습니다. 16mm를 초과하는 값을 쓰세요 (기본값 18mm).")
         bore_len = _num("노즐 보어 길이 (mm)", 1.0, 50.0, 20.0, "t3_blen", 1.0)
         nozzle_type = _sel("가스 분사 형태", ["환형 슬릿", "개별 홀"], "t3_type")
         jet_angle = _num("가스 분사각 (° , 축 기준)", 0.0, 90.0, 30.0, "t3_angle", 1.0)

@@ -1,77 +1,87 @@
-# MetalAtom — EIGA 금속분말 아토마이저 시뮬레이터 (오픈소스 간이 모델)
+# MetalAtom — Open-Source Gas Atomizer Simulator (EIGA)
 
-ANSYS를 그대로 재현하는 것이 목적이 아닙니다.
-공정 조건을 바꿔가며 입도분포의 **규칙(Rule)과 한계(Limit)** 를 찾는 도구입니다.
+MetalAtom is an open-source, simplified simulator for gas atomization of metal
+powder (EIGA — Electrode Induction Melting Gas Atomization). It does not try to
+reproduce ANSYS. Its purpose is to find the **rules and limits** of the process:
+sweep the process conditions and find where powder comes out right — and where it
+doesn't.
 
-## 실행
+It was built from field experience operating an ALD EIGA machine, with AI
+assistance. See [GLOSSARY.md](GLOSSARY.md) for every term used in the program,
+explained with examples.
+
+## What it does
+
+- **Process (Tab 1):** particle size distribution (D50/D10/D90), yield in a target
+  size range, gas-to-melt ratio (GMR), parameter sweeps, process-window maps.
+- **Rod & coil (Tab 2):** rod feed rate, coil power, coil shape (straight / cone /
+  curve taper / follow-shape), rod diameter, tip shape → melt rate, tip
+  temperature, melt cap length, detachment mode (droplet / thread).
+- **Coil heating view (Tab 2b):** Lagrangian descent thermal model with a radial
+  temperature field. See where the rod surface melts and where the core stays solid.
+- **Nozzle (Tab 3):** bore diameter (default 18 mm, with a clogging warning at
+  ≤ 16 mm), annular slit vs individual holes, jet angle, De Laval bore
+  (supersonic), transit time.
+- **Powder quality (Tab 4):** cooling / solidification distance, oxidation,
+  spheroidization, flowability.
+- **Yield (Tab 5):** mass-fraction yield for a passing size range.
+- **Radiation:** heat loss from the rod and coil to the chamber walls.
+- **Film-thread mode:** when only the rod surface melts (a surface film), the melt
+  flows down as a thin thread instead of dripping as blobs. The program draws the
+  film and the falling thread at true scale, with the upper diameter and the bore
+  arrival diameter.
+- **Condition presets:** 31 saved process conditions in the sidebar, each with a
+  memo — including the author's own process and the minimum-power conditions for a
+  150 mm fall, two per alloy.
+
+## The core idea: surface film → thin thread
+
+Melt only the surface of the rod so it flows down. If the melt supply is enough
+to chain the droplets into a continuous stream, it melts like a thread and gets
+sucked into the nozzle bore. That is the thread the program is built to find.
+Forcibly melting a thick column so it sticks together is not a thread — it is a
+fat blob that drips, clogs the nozzle, and gives a broad particle size
+distribution. A thin thread gives a narrower, more uniform distribution.
+
+Survival of the thread is judged by a stretch-aware growth integral **G**:
+G < 10.2 means the thread reaches the bore; G ≥ 10.2 means it pinches off
+mid-fall. See [GLOSSARY.md](GLOSSARY.md) for G, We, bore, and the rest.
+
+## Quick start
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-또는 실행 파일로 (시뮬레이션 화면이 웹 브라우저로 열립니다):
+Windows: double-click `web_view.bat`. If the browser does not open
+automatically, go to `http://localhost:8501`.
 
-- **Windows: `web_view.bat` 더블클릭**
-- 어디서나: `python web_view.py`
+Try it: in the sidebar, load **"Ti64 예시 1 — 100kW/공급 3/팁 5"** and look at the
+coil heating view — the film thread (blue) with its upper diameter and bore
+arrival diameter.
 
-`web_view.py`는 이 폴더의 `app.py`를 Streamlit 서버로 실행하는
-런처입니다. 브라우저가 자동으로 열리지 않으면
-`http://localhost:8501`로 직접 접속하세요.
-종료하려면 실행 창에서 Ctrl+C를 누르세요.
+## Physics at a glance
 
-## 구조 (사용자 스코프 기준)
+- Lubanska correlation: `D50/D = K·√[(νm/νg)·(1/We)·(1+M/A)]`
+  (We on melt density; K = 40 by default, a calibration constant)
+- Particle size distribution: lognormal (σg = 2.0 by default)
+- Gas jet: choked-flow check + choked mass-flow equation (Cd 0.9)
+- Film thread: `v0 = √(2g·L_melt)`; thread diameter from mass balance;
+  survival by the stretch-aware growth integral G vs 10.2
+- Materials: 316L, 17-4PH, Ti-6Al-4V, Inconel 718, Fe-2Ni. Gases: Ar, N₂, He.
 
-- **1 공정**: 가스 압력, 금속 온도, 진공도(용융부 + 챔버) 조절에 따른
-  입도분포(D50/D10/D90), 목표 범위 수율, 파라미터 스윕, 공정 윈도우
-- **2 봉·코일**: 봉 공급 속도, 봉 회전 속도, 코일 출력, 코일 형상(두께·형상·감은 횟수),
-  봉 지름, 팁 형상 → 용탕 생성량, 팁 이탈 모드(물방울/실)
-- **3 노즐**: 노즐 보어 = 상부→하부챔버 통로. 통과 중 고압가스 분쇄.
-  가스 유량, 계산 GMR, 통과 시간, 실린더 공급 상한 경고.
-  형상 파라미터: 분사 형태(환형 슬릿/개별 홀), 피치 지름, 슬릿 폭 또는
-  홀 개수·지름, 분사각. 면적은 형상에서 계산하고, 분사각은 횡방향
-  속도 성분(v·sinθ)으로 상호작용 Weber 수에 작용합니다.
-  개별 홀은 출구면 기준 원주 커버율로 균일성 리스크를 표시합니다.
-  보어 형상: 직선(초크, Mach 1) 또는 디 라발(초음속) — 면적비에서
-  출구 Mach를 풀고 과팽창/부족팽창/적정팽창을 판정합니다.
-- **코일 가열 보기**: 코일 단면 온도 히트맵.
-  코일 형상을 바꿀 수 있습니다: 직선 / 원뿔(선형 테이퍼) /
-  곡선 테이퍼(지수 p; p > 1은 아래쪽에서 급격히 좁아지는 팁 집중형,
-  p < 1은 위쪽에서 급격히 좁아짐).
-  직경(상/하부 내경), 깊이(축방향 높이), 감은 횟수, 주파수, 출력, 공급 속도 입력.
-  표피 깊이, 팁 표면 온도, 용융 캡 길이, 용탕 생성 임계 출력 표시.
-  물질 따라가는(라그랑지안) 가열 모델 + 용융 잠열 구간 + 표면 복사/대류 손실.
-  직선 코일과 비교 표시.
-  원뿔이 팁을 더 뜨겁게 만드는 이유를 보여주는 설명 그림
-  (`cone-vs-straight-explainer.png`, 실제 계산 결과)이 탭 하단에 표시됩니다.
-  핵심: 결합 세기 ∝ (봉 반경 / 코일 반경)² — 코일이 좁아질수록 같은 출력이
-  팁 근처에 집중됩니다.
-- **4 분말 품질 (2단계 예고)**: 냉각 시간·응고 거리 프리뷰.
-  상변화·산화·점도·유동성은 2단계에서 추가
+## Limitations (honest)
 
-## 핵심 식
+- Not CFD: no turbulence, no 3D nozzle flow.
+- Properties are representative values — replace them with your alloy's measured
+  values.
+- K, coil efficiency, and detachment thresholds are calibration parameters.
+- The film model is first-order: it ignores film viscosity (real thread may be
+  thicker) and gas drag on the film (which would thin it).
 
-- Lubanska 상관식: `D50/D = K·√[(νm/νg)·(1/We)·(1+M/A)]`
-  (We는 Lubanska 원형대로 용탕 밀도 기준, K는 장비 의존 보정 상수)
-- 입도분포: 로그정규 분포 (σg 기본값 2.0)
-- 가스 제트: 초크(음속) 조건 판정 + 초크 유량식
-- 팁 이탈 모드: 휴리스틱 v1 (임계값 보정 필요)
+## Feedback welcome
 
-## 스케치 테스트 케이스 (11/3)
-
-손 스케치(왼쪽: 물방울 낙하, 오른쪽: 깔때기 코일로 가는 실 유도)를
-재현하는 파라미터가 `2 봉·코일` 탭에 있습니다.
-상부 내경 = 하부 내경이면 직선 코일, 하부 내경을 줄이면 깔때기 코일입니다.
-테이퍼 집속 모델: `d_eff = d0·(D하부/D상부)^q`, 연속방정식으로 속도 상승,
-We ∝ 1/d³ 관계로 실 모드 쪽으로 이동합니다. q 기본값 0.5는 보정 필요.
-
-아무리 열로 잘 녹여도 용탕의 점도·유동도가 따라주지 않으면 분무가 안 됩니다.
-이 프로그램은 합금별 점도·표면장력을 입력으로 받으며,
-점도가 임계 수준을 넘으면 굵은 분말·불규칙 형상 쪽으로 결과가 이동합니다.
-같은 장비·같은 조건에서도 합금마다 결과가 다른 이유입니다.
-
-## 한계 (솔직하게)
-
-- CFD가 아닙니다. 난류, 노즐 내부 3차원 유동은 풀지 않습니다.
-- 물성은 대표값입니다. 본인 합금 실측값으로 교체하세요.
-- K 상수, 코일 효율, 이탈 모드 임계값은 보정 파라미터입니다.
+If you work with gas atomization, please try it and tell us what matches your
+machine and what doesn't — especially melt / no-melt boundaries and detachment
+behavior. Open an issue on GitHub.

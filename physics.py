@@ -241,20 +241,27 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0,
         d_gas = d_neck * sqrt(v_cap / v_gas)
         t_fall = (v_gas - v_cap) / a_eff
 
-    Stage 3 — survival. Rayleigh-Plateau breakup time at the gas-zone
-    diameter, t_b = C_break * sqrt(rho * (d_gas / 2)^3 / sigma).
-    Bore suction (optional v_boost, m/s) is a velocity increment applied at
-    the gas zone, from bore_suction() below: the stream arrives faster and
-    thins by continuity (d_final = d_neck * sqrt(v_cap / (v_gas + v_boost))).
-    The total fall time is kept as computed above because the suction zone
-    (bore length) is short compared with the fall distance; the breakup
-    time is re-evaluated at the thinned diameter. Note the trade-off: the
-    boost shortens t_fall only slightly but shortens t_break a lot, so
-    suction can hurt fall survival even while it helps bore entry.
-    C_break ~ 30 is the undisturbed-jet literature scale
-    (ln(R / delta0) / 0.34); a disturbed jet breaks sooner, so this is the
-    optimistic end. Thresholds (neck We 2 / 4, C_break) are heuristics and
-    still need calibration against ALD operating records.
+    Stage 3 — survival (stretching-aware). A static column breaks when
+    the capillary growth reaches ln(R / delta0); for a STRETCHING column
+    the perturbation amplitude grows only at the net rate
+    (omega - strain_rate), where omega = 0.34 * sqrt(sigma / (rho * R^3))
+    is the Rayleigh-Plateau growth rate and strain_rate = a / v is the
+    axial stretch rate (the cheese-pulling / fibre-spinning effect: fast
+    stretching stabilises the column). The accumulated growth over the
+    fall is therefore
+        G = integral(omega dt) - ln(v_gas / v_cap),
+    with integral(omega dt) = (omega_neck / (a * v_cap^(3/4))) * (4/7) *
+    (v_gas^(7/4) - v_cap^(7/4)) for constant acceleration (continuity
+    gives R ~ v^(-1/2)). The column breaks when G >= 0.34 * C_break,
+    which reduces to the static t_fall > t_break test when stretching
+    is absent. Bore suction (optional v_boost, m/s) is a velocity
+    increment applied at the gas zone, from bore_suction() below: the
+    stream arrives faster and thins by continuity, but because the
+    boost acts at the end of the fall it does NOT change G — suction
+    is neutral for fall survival under this criterion (it still helps
+    bore entry and atomization). C_break ~ 30 is the undisturbed-jet
+    literature scale (ln(R / delta0) / 0.34). Thresholds (neck We 2 / 4,
+    C_break) are heuristics and still need calibration against ALD operating records.
 
     Returns a dict with the numbers, the mode label (same "droplet" /
     "transition" / "thread" prefixes the coil view's drawing logic keys on),
@@ -268,7 +275,8 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0,
                 "explanation": "용탕 유량이 없어 류가 형성되지 않습니다.",
                 "v_cap": 0.0, "d_neck": 0.0, "We_neck": 0.0,
                 "v_gas": 0.0, "d_gas": 0.0, "t_fall": 0.0, "t_break": 0.0,
-                "tate_d": 0.0}
+                "tate_d": 0.0, "growth": 0.0,
+                "growth_crit": 0.34 * C_break, "stretch_ratio": 0.0}
     v_cap = math.sqrt(sig / (rho * R_eff))
     d_neck = math.sqrt(4.0 * m_dot / (math.pi * rho * v_cap))
     We_neck = d_neck / R_eff
@@ -282,6 +290,27 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0,
         t_fall = 0.0
     d_gas = d_neck * math.sqrt(v_cap / v_gas) if v_gas > 0 else d_neck
     t_break = C_break * math.sqrt(rho * (d_gas / 2.0) ** 3 / sig)
+    # Accumulated capillary growth over the fall (stretching-aware survival).
+    # Uses pre-boost velocity/diameter: the suction boost acts at the end.
+    R_neck = d_neck / 2.0 if d_neck > 0 else 0.0
+    if R_neck > 0:
+        omega_neck = 0.34 * math.sqrt(sig / (rho * R_neck ** 3))
+    else:
+        omega_neck = 0.0
+    growth_crit = 0.34 * C_break
+    if a > 0.0 and fall > 0.0 and v_gas > v_cap > 0.0:
+        growth = ((omega_neck / (a * v_cap ** 0.75)) * (4.0 / 7.0)
+                  * (v_gas ** 1.75 - v_cap ** 1.75)
+                  - math.log(v_gas / v_cap))
+    elif fall > 0.0 and v_cap > 0.0:
+        growth = omega_neck * (fall / v_cap)  # no acceleration: static column
+    else:
+        growth = 0.0
+    if d_gas > 0 and v_gas > 0:
+        omega_gas = 0.34 * math.sqrt(sig / (rho * (d_gas / 2.0) ** 3))
+        stretch_ratio = (a / v_gas) / omega_gas if omega_gas > 0 else 0.0
+    else:
+        stretch_ratio = 0.0
     if v_boost and v_boost > 0.0:
         v_gas = v_gas + v_boost
         d_gas = d_neck * math.sqrt(v_cap / v_gas) if v_gas > 0 else d_neck
@@ -295,28 +324,32 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0,
                 "굵은 입자/위성분말 위험이 큼.",
                 "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
                 "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
-                "t_break": t_break, "tate_d": tate_d}
-    if t_fall > t_break:
+                "t_break": t_break, "tate_d": tate_d, "growth": growth,
+                "growth_crit": growth_crit, "stretch_ratio": stretch_ratio}
+    if growth >= growth_crit:
         return {"mode": "droplet (물방울 모드)", "gate": "fall",
-                "explanation": "팁에서는 연속류가 나오지만 낙하 거리가 길어 가스 영역에 닿기 전에 "
-                "모세관 불안정성으로 끊어져 물방울이 되는 경향. 낙하 거리를 줄이거나 "
-                "가스·압력차 가속을 키우면 실 쪽으로 갑니다.",
+                "explanation": "팁에서는 연속류가 나오지만 낙하 중 모세관 성장 누적값이 임계에 도달해 "
+                "가스 영역에 닿기 전에 끊어져 물방울이 되는 경향. 낙하 거리를 줄이거나 "
+                "신장률(당김)을 키워 성장 누적값을 낮추면 실 쪽으로 갑니다.",
                 "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
                 "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
-                "t_break": t_break, "tate_d": tate_d}
+                "t_break": t_break, "tate_d": tate_d, "growth": growth,
+                "growth_crit": growth_crit, "stretch_ratio": stretch_ratio}
     if We_neck < 4.0:
         return {"mode": "transition (전이 영역)", "gate": "marginal",
                 "explanation": "넥 Weber 수가 경계에 있어 작은 조건 변화에도 모드가 바뀔 수 있는 구간. "
                 "공정 안정성이 떨어집니다.",
                 "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
                 "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
-                "t_break": t_break, "tate_d": tate_d}
+                "t_break": t_break, "tate_d": tate_d, "growth": growth,
+                "growth_crit": growth_crit, "stretch_ratio": stretch_ratio}
     return {"mode": "thread (실 모드)", "gate": "survived",
             "explanation": "넥이 연속 기둥을 유지하고 낙하 신장을 버텨 가스 영역까지 실처럼 도착하는 경향. "
             "균일한 분무에 유리한 영역.",
             "v_cap": v_cap, "d_neck": d_neck, "We_neck": We_neck,
             "v_gas": v_gas, "d_gas": d_gas, "t_fall": t_fall,
-            "t_break": t_break, "tate_d": tate_d}
+            "t_break": t_break, "tate_d": tate_d, "growth": growth,
+            "growth_crit": growth_crit, "stretch_ratio": stretch_ratio}
 
 def bore_suction(d_stream_m, D_bore_m, m_dot_gas, rho_gas, rho_melt,
                  dP_chamber_Pa):

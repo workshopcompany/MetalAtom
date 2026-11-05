@@ -93,6 +93,7 @@ EN = {
     "둥근": "Rounded",
     "샤프": "Sharp",
     "팁→노즐 낙하 높이 (mm)": "Tip → nozzle fall height (mm)",
+    "팁→노즐(가스 영역) 낙하 높이 (mm)": "Tip → nozzle (gas zone) fall height (mm)",
     "보어 흡입": "Bore suction",
     "벤투리 ΔP": "Venturi ΔP",
     "챔버 ΔP": "Chamber ΔP",

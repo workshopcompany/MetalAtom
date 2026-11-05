@@ -122,6 +122,17 @@ for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
+# 낙하 거리 단일화: 예전 두 입력(2(a) t2_fall_mm, 코일뷰 g_fall)은 같은 물리량
+# (팁→노즐 = 팁→가스 영역, 가스 제트가 노즐 보어 자리)이므로 fall_mm 하나로 합친다.
+# 기존 세션 값은 2(a) 값(사용자가 직접 바꾼 값) 우선으로 이어받는다.
+if "fall_mm" not in st.session_state:
+    if "t2_fall_mm" in st.session_state:
+        st.session_state["fall_mm"] = st.session_state["t2_fall_mm"]
+    elif "g_fall" in st.session_state:
+        st.session_state["fall_mm"] = st.session_state["g_fall"]
+    else:
+        st.session_state["fall_mm"] = 200.0
+
 
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -335,7 +346,7 @@ def _process_chain():
                        gmr, float(ss["t1_k"]))
     sig = float(ss["t1_sig"])
     d10, d50, d90 = ph.D_values(r["D50"], sig)
-    v_fall = math.sqrt(2.0 * 9.81 * float(ss.get("t2_fall_mm", 200.0)) / 1000.0)
+    v_fall = math.sqrt(2.0 * 9.81 * float(ss.get("fall_mm", 200.0)) / 1000.0)
     ss["melt_rate"] = melt
     ss["D50_um"] = d50 * 1e6
     ss["sig_g"] = sig
@@ -519,7 +530,7 @@ with tab2:
                    f"자동 계산됩니다.")
     with c3:
         tip_shape = _sel("팁 형상", ["평탄", "둥근", "샤프"], "t2_tip")
-        fall_h = _num("팁→노즐 낙하 높이 (mm)", 50.0, 1000.0, 200.0, "t2_fall_mm", 1.0)
+        fall_h = _num("팁→노즐(가스 영역) 낙하 높이 (mm)", 0.0, 1000.0, 200.0, "fall_mm", 1.0)
         T_melt2 = _num("용탕 온도 (°C) ",
                        float(alloy["T_liquidus"] - 273.15) - 50,
                        float(alloy["T_liquidus"] - 273.15) + 300,
@@ -590,10 +601,10 @@ with tab2:
         rod_len = _num("봉 길이 (mm)", 20.0, 400.0, 100.0, "g_rodlen", 5.0,
                        help="팁 끝부터 봉 상단까지의 길이입니다. 코일 위치(팁 기준)와 이 길이로 "
                             "그림에 보이는 봉 구간이 정해집니다.")
-        fall_h = _num("팁→가스 영역 낙하 거리 (mm)", 0.0, 500.0, 20.0, "g_fall", 1.0,
-                      help="팁 끝에서 가스 제트가 모이는 지점까지의 거리입니다. 이 거리 동안 용탕류가 "
+        fall_h = _num("팁→노즐(가스 영역) 낙하 높이 (mm)", 0.0, 1000.0, 200.0, "fall_mm", 1.0,
+                      help="팁 끝에서 가스 제트가 모이는 지점(노즐 보어)까지의 거리입니다. 이 거리 동안 용탕류가 "
                            "가속되며 가늘어지고, 모세관 불안정성과 경합합니다. "
-                           "실측값이 없으면 기본값 20 mm를 씁니다.")
+                           "2(a) 탭의 낙하 높이와 같은 값입니다.")
         gas_acc = _num("가스·압력차 추가 가속 (m/s²)", 0.0, 5000.0, 0.0, "g_gasacc", 10.0,
                        help="중력 외에 용탕류를 잡아늘리는 가속도입니다. 가스 항력과 챔버 간 압력차 흡입을 "
                             "합친 값으로, 0이면 중력만으로 떨어진다고 봅니다. "

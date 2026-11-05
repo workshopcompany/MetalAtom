@@ -351,6 +351,63 @@ def stream_detachment(m_dot, rho, sigma, R_tip, fall_m, a_eff, C_break=30.0,
             "t_break": t_break, "tate_d": tate_d, "growth": growth,
             "growth_crit": growth_crit, "stretch_ratio": stretch_ratio}
 
+def film_thread(m_dot, rho, sigma, melt_len_m, fall_m, a_eff,
+                D_bore_m, m_dot_gas, rho_gas, dP_chamber_Pa, C_break=30.0):
+    """Surface-film thread model (film-thread) for the rod tip.
+
+    This is the OTHER thread route, different from stream_detachment (v2).
+    v2 starts from a fat molten cap that detaches through a pendant neck;
+    the film route starts from a surface-only melt: the rod surface is
+    molten while the core stays solid (the caller checks that regime from
+    the radial temperature field), so the melt flows down as a thin film
+    and converges into a thread at the tip. No neck Weber gate applies
+    here — formation by film convergence is assumed, and only fall
+    survival is tested.
+
+    Film velocity at the tip comes from the melt-cap length (the film
+    accelerates down the molten surface under gravity):
+        v0 = sqrt(2 * g * melt_len)
+    The thread diameter at the tip follows from the mass balance:
+        d_tip = sqrt(4 * m_dot / (pi * rho * v0))
+    Gravity fall thins it by continuity (v_grav, d_grav), and survival
+    uses the SAME stretch-aware growth integral as v2, evaluated on the
+    thread's own radius history:
+        G = (omega0 / (a * v0^(3/4))) * (4/7) * (v_grav^(7/4) - v0^(7/4))
+            - ln(v_grav / v0),   omega0 = 0.34 * sqrt(sigma / (rho * r0^3))
+    Thread if G < 0.34 * C_break. Bore suction (bore_suction with the
+    gravity diameter) is applied AFTER the fall, so it thins the arriving
+    thread (v_bore, d_bore) but does NOT change G — suction is neutral
+    for fall survival, same as in v2. First-order caveats: film
+    viscosity is ignored (real v0 may be lower, so a thicker thread)
+    and gas drag on the film is ignored (would thin it).
+    """
+    g = 9.81
+    sig = max(sigma, 0.1) if sigma else 0.1
+    crit = 0.34 * C_break
+    if (m_dot is None or m_dot <= 0 or rho is None or rho <= 0
+            or melt_len_m is None or melt_len_m <= 0):
+        return {"v0": 0.0, "d_tip": 0.0, "v_grav": 0.0, "d_grav": 0.0,
+                "growth": float("inf"), "growth_crit": crit,
+                "v_boost": 0.0, "v_bore": 0.0, "d_bore": 0.0, "mode": "breaks"}
+    a = a_eff if a_eff and a_eff > 0 else g
+    v0 = math.sqrt(2 * g * melt_len_m)
+    d_tip = math.sqrt(4 * m_dot / (math.pi * rho * v0))
+    v_grav = math.sqrt(v0 ** 2 + 2 * a * fall_m)
+    d_grav = d_tip * math.sqrt(v0 / v_grav)
+    r0 = d_tip / 2.0
+    w0 = 0.34 * math.sqrt(sig / (rho * r0 ** 3))
+    growth = ((w0 / (a * v0 ** 0.75)) * (4.0 / 7.0)
+              * (v_grav ** 1.75 - v0 ** 1.75) - math.log(v_grav / v0))
+    suc = bore_suction(d_grav, D_bore_m, m_dot_gas, rho_gas, rho,
+                       dP_chamber_Pa)
+    v_bore = v_grav + suc["v_boost"]
+    d_bore = d_tip * math.sqrt(v0 / v_bore) if v_bore > 0 else d_tip
+    return {"v0": v0, "d_tip": d_tip, "v_grav": v_grav, "d_grav": d_grav,
+            "growth": growth, "growth_crit": crit,
+            "v_boost": suc["v_boost"], "v_bore": v_bore, "d_bore": d_bore,
+            "mode": "thread" if growth < crit else "breaks"}
+
+
 def bore_suction(d_stream_m, D_bore_m, m_dot_gas, rho_gas, rho_melt,
                  dP_chamber_Pa):
     """Bore suction at the nozzle bore entrance (Venturi + chamber dP).

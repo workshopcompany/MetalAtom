@@ -1045,6 +1045,20 @@ with tab2:
     growth_crit_m = det["growth_crit"]  # 임계값 0.34*C_break
     stretch_m = det["stretch_ratio"]    # 가스 영역 신장률/오그라듦 속도
 
+    # ---- 표면막-실 (film-thread) — 표면만 녹고 속은 고체인 경우, 막이 모여 가는 실이 된다
+    # v2는 뚱뚱한 캡에서 떨어지는 줄기를 보지만, 막-실은 표면막의 수렴을 본다.
+    # 막 판정: 팁 표면 ≥ 액상선 AND 팁 중심 < 고상선. 실 판정: v2와 같은 신장-인식 G 적분 (< 10.2).
+    T_sol_C = float(alloy["T_solidus"] - 273.15)
+    center_tip_C = float(Tg[-1, 0] - 273.15)
+    film_on = bool(tip_molten and tip_C >= T_liq_C and center_tip_C < T_sol_C)
+    film_res = None
+    film_thread_on = False
+    if film_on and melt_len > 0 and m_dot_melt > 0:
+        film_res = ph.film_thread(m_dot_melt, alloy["rho_melt"], sigma_melt,
+                                  melt_len / 1000.0, fall_h / 1000.0, 9.81 + gas_acc,
+                                  _D_bore, _m_gas, _rho_gas, _dP_ch)
+        film_thread_on = film_res["mode"] == "thread"
+
     # 코일 형상을 2 봉·코일 탭의 표시용으로 저장하고(다음 실행에서 반영),
     # 팁 표면 온도를 복사열 탭으로 연동합니다.
     # 코일 길이만 2탭 표시용으로 저장합니다. g_top/g_bot은 위젯 키라 여기서 다시 쓰면
@@ -1090,6 +1104,18 @@ with tab2:
                            f"보어 입구 속도 +{suc['v_boost']:.1f} m/s, "
                            f"보어 입구 Ø{d_gas_m * 1000:.2f} mm. "
                            f"판정에는 이 보어 흡입 가속이 포함되어 있습니다."))
+        if film_on and film_res is not None:
+            if film_thread_on:
+                st.success(f"표면막-실: 실 모드 — 표면 {tip_C:.0f} °C / 중심 {center_tip_C:.0f} °C (표면막) · "
+                           f"팁 Ø{film_res['d_tip'] * 1000:.2f} mm → 보어 Ø{film_res['d_bore'] * 1000:.2f} mm · "
+                           f"성장 G {film_res['growth']:.2f} / 임계 {film_res['growth_crit']:.1f}")
+            else:
+                st.warning(f"표면막이지만 낙하 중 끊어짐 — 표면 {tip_C:.0f} °C / 중심 {center_tip_C:.0f} °C (표면막) · "
+                           f"팁 Ø{film_res['d_tip'] * 1000:.2f} mm → 보어 Ø{film_res['d_bore'] * 1000:.2f} mm · "
+                           f"성장 G {film_res['growth']:.2f} / 임계 {film_res['growth_crit']:.1f}")
+        else:
+            st.caption(f"표면막 조건이 아닙니다 — 팁 표면 {tip_C:.0f} °C / 중심 {center_tip_C:.0f} °C "
+                       f"(막: 표면 ≥ 액상선 {T_liq_C:.0f} °C 이고 중심 < 고상선 {T_sol_C:.0f} °C).")
         with st.expander("왜 물방울 모드 / 실 모드로 갈리나? (점도·표면장력 이야기)"):
             st.markdown(i18n.doc("droplet",
                 "판정은 세 단계로 합니다 (v2 낙하-신장 모델).\n\n"
@@ -1182,33 +1208,62 @@ with tab2:
     # 팁에서 떨어지는 용탕 — 실(연속류) 또는 물방울
     y_tip_mm = L * 1000.0
     if tip_molten:
-        d_met_mm = max(d_exit_m * 1000.0, 1.2)
         y_low = max(bottom_mm - 3.0, y_tip_mm + 6.0)
-        if mode_m.startswith("droplet"):
-            for k in range(3):
-                yc = y_tip_mm + 3.5 + k * 6.5
-                if yc > y_low:
-                    break
-                rd = max(d_met_mm * 0.9, 1.7)
-                shapes.append(dict(type="circle", layer="above",
-                                   x0=-rd, x1=rd, y0=yc - rd, y1=yc + rd,
-                                   line=dict(color="#6d0b0b", width=0.5),
-                                   fillcolor="#cf1d1d"))
-        else:
-            hw = max(d_met_mm / 2.0, 0.7)
-            shapes.append(dict(type="rect", layer="above", x0=-hw, x1=hw,
-                               y0=y_tip_mm, y1=y_low,
+        if film_on and film_res is not None:
+            # 막-실: 계산된 실 지름 그대로(실제 mm) 그린 가늘어지는 실. 조건마다 두께가 다르다.
+            _a_film = 9.81 + gas_acc
+            _v0_f = film_res["v0"]
+            _d0_f = film_res["d_tip"] * 1000.0
+            _pts = []
+            for _s in range(9):
+                _yy = y_tip_mm + (y_low - y_tip_mm) * _s / 8.0
+                _vv = math.sqrt(_v0_f ** 2 + 2 * _a_film * ((_yy - y_tip_mm) / 1000.0))
+                _dd = _d0_f * math.sqrt(_v0_f / _vv) if _vv > 0 else _d0_f
+                _pts.append((_dd / 2.0, _yy))
+            _path = "M " + " L ".join(f"{-hw:.3f} {yy:.2f}" for hw, yy in _pts)
+            _path += " L " + " L ".join(f"{hw:.3f} {yy:.2f}" for hw, yy in reversed(_pts)) + " Z"
+            shapes.append(dict(type="path", layer="above", path=_path,
                                line=dict(color="#6d0b0b", width=0.5),
                                fillcolor="#cf1d1d"))
-            if mode_m.startswith("transition"):
-                rd = max(d_met_mm * 0.9, 1.7)
+            if not film_thread_on:
+                _rd = max(_pts[-1][0] * 1.8, 1.7)
                 shapes.append(dict(type="circle", layer="above",
-                                   x0=-rd, x1=rd,
-                                   y0=y_low + 1.5 - rd, y1=y_low + 1.5 + rd,
+                                   x0=-_rd, x1=_rd,
+                                   y0=y_low + 1.5 - _rd, y1=y_low + 1.5 + _rd,
                                    line=dict(color="#6d0b0b", width=0.5),
                                    fillcolor="#cf1d1d"))
-        anno_metal = ("물방울 모드" if mode_m.startswith("droplet")
-                      else ("전이 영역" if mode_m.startswith("transition") else "실(연속류) 모드"))
+            anno_metal = ((f"표면막-실 (G {film_res['growth']:.1f}, "
+                           f"팁 Ø{_d0_f:.2f} → 보어 Ø{film_res['d_bore'] * 1000:.2f} mm)")
+                          if film_thread_on else
+                          (f"표면막-실 끊어짐 (G {film_res['growth']:.1f}, "
+                           f"팁 Ø{_d0_f:.2f} → 보어 Ø{film_res['d_bore'] * 1000:.2f} mm)"))
+        else:
+            d_met_mm = max(d_exit_m * 1000.0, 1.2)
+            if mode_m.startswith("droplet"):
+                for k in range(3):
+                    yc = y_tip_mm + 3.5 + k * 6.5
+                    if yc > y_low:
+                        break
+                    rd = max(d_met_mm * 0.9, 1.7)
+                    shapes.append(dict(type="circle", layer="above",
+                                       x0=-rd, x1=rd, y0=yc - rd, y1=yc + rd,
+                                       line=dict(color="#6d0b0b", width=0.5),
+                                       fillcolor="#cf1d1d"))
+            else:
+                hw = max(d_met_mm / 2.0, 0.7)
+                shapes.append(dict(type="rect", layer="above", x0=-hw, x1=hw,
+                                   y0=y_tip_mm, y1=y_low,
+                                   line=dict(color="#6d0b0b", width=0.5),
+                                   fillcolor="#cf1d1d"))
+                if mode_m.startswith("transition"):
+                    rd = max(d_met_mm * 0.9, 1.7)
+                    shapes.append(dict(type="circle", layer="above",
+                                       x0=-rd, x1=rd,
+                                       y0=y_low + 1.5 - rd, y1=y_low + 1.5 + rd,
+                                       line=dict(color="#6d0b0b", width=0.5),
+                                       fillcolor="#cf1d1d"))
+            anno_metal = ("물방울 모드" if mode_m.startswith("droplet")
+                          else ("전이 영역" if mode_m.startswith("transition") else "실(연속류) 모드"))
         shapes.append(dict(type="line", layer="above", xref="paper", yref="y",
                            x0=0.0, x1=1.0, y0=y_tip_mm, y1=y_tip_mm,
                            line=dict(color="#cf1d1d", width=0.8, dash="dot")))
@@ -1279,6 +1334,52 @@ with tab2:
     st.plotly_chart(fig, width="stretch")
     st.caption(f"노란 원 {len(turn_y_mm)}개 = 코일 {int(turns_h)}턴 "
                f"(턴 간격 {pitch_mm:.1f} mm). 노란 점선은 코일 내경 경로입니다.")
+
+    if tip_molten and film_on and film_res is not None:
+        # 낙하 실 단면 (확대): 팁에서 보어까지 실이 가늘어지는 모양을 실제 mm로 그린다.
+        # x축 범위를 고정(±5 mm)해 두어 조건마다 실 두께가 눈으로 다르게 보인다.
+        _H_f = float(fall_h)
+        _v0_f = film_res["v0"]
+        _d0_f = film_res["d_tip"] * 1000.0
+        _d_grav_f = film_res["d_grav"] * 1000.0
+        _d_bore_f = film_res["d_bore"] * 1000.0
+        _a_film = 9.81 + gas_acc
+        _zs = np.linspace(0.0, _H_f, 60)
+        _vs = np.sqrt(_v0_f ** 2 + 2 * _a_film * (_zs / 1000.0))
+        _ds = _d0_f * np.sqrt(_v0_f / _vs)
+        _xs = np.concatenate([-_ds[::-1] / 2.0, _ds / 2.0])
+        _ys = np.concatenate([_zs[::-1], _zs])
+        _fig_f = go.Figure()
+        _fig_f.add_trace(go.Scatter(x=_xs, y=_ys, fill="toself",
+                                    line=dict(color="#6d0b0b", width=1),
+                                    fillcolor="#cf1d1d", hoverinfo="skip",
+                                    showlegend=False))
+        if film_thread_on:
+            _fig_f.add_trace(go.Scatter(
+                x=[-_d_bore_f / 2.0, _d_bore_f / 2.0, _d_bore_f / 2.0,
+                   -_d_bore_f / 2.0, -_d_bore_f / 2.0],
+                y=[_H_f, _H_f, _H_f + 8.0, _H_f + 8.0, _H_f],
+                fill="toself", line=dict(color="#6d0b0b", width=1),
+                fillcolor="#e85d5d", hoverinfo="skip", showlegend=False))
+        else:
+            _rd_f = max(_d_grav_f * 0.9, 1.7)
+            _fig_f.add_shape(type="circle", x0=-_rd_f, x1=_rd_f,
+                             y0=_H_f + 4.0 - _rd_f, y1=_H_f + 4.0 + _rd_f,
+                             line=dict(color="#6d0b0b", width=0.5), fillcolor="#cf1d1d")
+        _half = max(5.0, (_d0_f / 2.0) * 1.4)
+        _fig_f.update_layout(
+            height=520, margin=dict(l=60, r=30, t=46, b=44),
+            title=dict(text=(f"낙하 실 단면 — 팁 Ø{_d0_f:.2f} mm → 보어 Ø{_d_bore_f:.2f} mm "
+                              f"(성장 G {film_res['growth']:.2f} / 임계 {film_res['growth_crit']:.1f})"
+                              + ("" if film_thread_on else " — 끊어짐")),
+                       font=dict(size=13)),
+            xaxis=dict(title="반경 (mm)", range=[-_half, _half], zeroline=False, showgrid=False),
+            yaxis=dict(title="팁에서 낙하 거리 (mm)", range=[_H_f + 14.0, -4.0], showgrid=False),
+            plot_bgcolor="white")
+        st.plotly_chart(_fig_f, width="stretch")
+        st.caption(f"실 두께는 계산값 그대로(실제 mm)입니다. 조건이 바뀌면 팁 지름·보어 도착 지름이 바뀌어 "
+                   f"그림의 실 두께가 달라집니다. 중력 낙하로 Ø{_d_grav_f:.2f} mm까지 가늘어진 뒤 "
+                   f"보어 흡입으로 Ø{_d_bore_f:.2f} mm가 됩니다.")
 
     if compare_on:
         st.markdown(i18n.tr("**기준과 비교 — 같은 조건**"))

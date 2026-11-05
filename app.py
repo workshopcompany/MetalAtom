@@ -123,7 +123,9 @@ for _k, _v in _DEFAULTS.items():
         st.session_state[_k] = _v
 
 # 낙하 거리 단일화: 예전 두 입력(2(a) t2_fall_mm, 코일뷰 g_fall)은 같은 물리량
-# (팁→노즐 = 팁→가스 영역, 가스 제트가 노즐 보어 자리)이므로 fall_mm 하나로 합친다.
+# (팁→노즐 = 팁→가스 영역, 가스 제트가 노즐 보어 자리)이므로 fall_mm 하나를 공유한다.
+# 두 탭 위젯은 각각 fall_mm_2a / fall_mm_coil 키를 쓰고 on_change로 fall_mm에 연동한다
+# (Streamlit은 같은 키의 위젯을 두 번 만들 수 없어서 키를 나눈 것).
 # 기존 세션 값은 2(a) 값(사용자가 직접 바꾼 값) 우선으로 이어받는다.
 if "fall_mm" not in st.session_state:
     if "t2_fall_mm" in st.session_state:
@@ -138,7 +140,7 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
-def _num(label, lo, hi, default, key, step=None, fmt=None, help=None, disabled=False):
+def _num(label, lo, hi, default, key, step=None, fmt=None, help=None, disabled=False, link=None):
     """키가 고정된 숫자 입력. session_state 값을 먼저 채워 연동값이 들어가게 합니다.
 
     Streamlit은 number_input의 value/min_value/max_value/step가 모두 같은
@@ -161,11 +163,18 @@ def _num(label, lo, hi, default, key, step=None, fmt=None, help=None, disabled=F
     lo_c = _coerce(lo, 0)
     hi_c = _coerce(hi, lo_c)
     def_c = _clamp(_coerce(default, lo_c), lo_c, hi_c)
-    if key not in ss:
+    if link is not None and link in ss:
+        # 연동 입력: 위젯 생성 전에 공유값으로 맞춘다 (생성 뒤에는 바꿀 수 없음).
+        ss[key] = _clamp(_coerce(ss[link], def_c), lo_c, hi_c)
+    elif key not in ss:
         ss[key] = def_c
     else:
         ss[key] = _clamp(_coerce(ss[key], def_c), lo_c, hi_c)
     kw = dict(min_value=lo_c, max_value=hi_c, key=key, help=help, disabled=disabled)
+    if link is not None:
+        def _sync_to_link():
+            ss[link] = ss[key]
+        kw["on_change"] = _sync_to_link
     if step is not None:
         kw["step"] = float(step) if use_float else int(step)
     if fmt:
@@ -530,7 +539,7 @@ with tab2:
                    f"자동 계산됩니다.")
     with c3:
         tip_shape = _sel("팁 형상", ["평탄", "둥근", "샤프"], "t2_tip")
-        fall_h = _num("팁→노즐(가스 영역) 낙하 높이 (mm)", 0.0, 1000.0, 200.0, "fall_mm", 1.0)
+        fall_h = _num("팁→노즐(가스 영역) 낙하 높이 (mm)", 0.0, 1000.0, 200.0, "fall_mm_2a", 1.0, link="fall_mm")
         T_melt2 = _num("용탕 온도 (°C) ",
                        float(alloy["T_liquidus"] - 273.15) - 50,
                        float(alloy["T_liquidus"] - 273.15) + 300,
@@ -601,7 +610,7 @@ with tab2:
         rod_len = _num("봉 길이 (mm)", 20.0, 400.0, 100.0, "g_rodlen", 5.0,
                        help="팁 끝부터 봉 상단까지의 길이입니다. 코일 위치(팁 기준)와 이 길이로 "
                             "그림에 보이는 봉 구간이 정해집니다.")
-        fall_h = _num("팁→노즐(가스 영역) 낙하 높이 (mm)", 0.0, 1000.0, 200.0, "fall_mm", 1.0,
+        fall_h = _num("팁→노즐(가스 영역) 낙하 높이 (mm)", 0.0, 1000.0, 200.0, "fall_mm_coil", 1.0, link="fall_mm",
                       help="팁 끝에서 가스 제트가 모이는 지점(노즐 보어)까지의 거리입니다. 이 거리 동안 용탕류가 "
                            "가속되며 가늘어지고, 모세관 불안정성과 경합합니다. "
                            "2(a) 탭의 낙하 높이와 같은 값입니다.")

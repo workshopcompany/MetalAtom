@@ -7,6 +7,8 @@ MetalAtom은 금속분말 가스 아토마이저(EIGA — 전극 유도용해 �
 ALD EIGA 장비를 직접 운전한 현장 경험을 바탕으로, AI의 도움을 받아 만들었습니다.
 프로그램에 나오는 모든 용어는 [GLOSSARY.md](GLOSSARY.md)에 예시와 함께 설명되어 있습니다.
 
+![표면막 → 얇은 실 (Ti-6Al-4V, 100kW, 공급 3mm/s)](images/metalatom-hero-film-thread.png)
+
 ## 기능
 
 - **1 공정:** 입도분포(D50/D10/D90), 목표 범위 수율, 가스/용탕 비(GMR),
@@ -40,6 +42,16 @@ ALD EIGA 장비를 직접 운전한 현장 경험을 바탕으로, AI의 도움�
 G < 10.2면 실이 보어까지 닿고, G ≥ 10.2면 낙하 중에 오그라져 끊어집니다.
 G, We, 보어 등 자세한 설명은 [GLOSSARY.md](GLOSSARY.md)를 보세요.
 
+## 스크린샷
+
+실제 앱 화면(Streamlit)입니다. 저장된 조건 "Ti64 예시 1"을 불러온 상태입니다.
+
+![공정 탭 — D50, 수율, GMR](images/metalatom-capture-tab1-process.png)
+
+![코일 가열 단면 — 표면막 → 얇은 실, G 8.38](images/metalatom-capture-heating-cross-section.png)
+
+![막-실 형상도 — 위쪽 Ø60.0, 팁 Ø3.19, 도착 Ø1.25mm](images/metalatom-capture-film-shape.png)
+
 ## 실행
 
 ```bash
@@ -64,6 +76,12 @@ Windows: `web_view.bat` 더블클릭. 브라우저가 자동으로 열리지 않
   신장 고려 성장 적분 G 대 10.2로 생존 판정
 - 재료: 316L, 17-4PH, Ti-6Al-4V, Inconel 718, 저합금강(Fe-2Ni).
   가스: Ar, N₂, He.
+
+모델이 보여주는 규칙 두 가지:
+
+![D50 대 가스 압력 — 40bar 위에서 포화 (316L, Lubanska)](images/metalatom-d50-vs-pressure.png)
+
+![실 대 덩어리 입도분포 — 실이 더 좁다 (D50 40µm, 예시 로그정규)](images/metalatom-thread-vs-lump-psd.png)
 
 ## 한계 (솔직하게)
 

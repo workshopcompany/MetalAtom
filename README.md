@@ -10,6 +10,8 @@ It was built from field experience operating an ALD EIGA machine, with AI
 assistance. See [GLOSSARY.md](GLOSSARY.md) for every term used in the program,
 explained with examples.
 
+![Surface film → thin thread (Ti-6Al-4V, 100 kW, feed 3 mm/s)](images/metalatom-hero-film-thread.png)
+
 ## What it does
 
 - **Process (Tab 1):** particle size distribution (D50/D10/D90), yield in a target
@@ -47,6 +49,16 @@ Survival of the thread is judged by a stretch-aware growth integral **G**:
 G < 10.2 means the thread reaches the bore; G ≥ 10.2 means it pinches off
 mid-fall. See [GLOSSARY.md](GLOSSARY.md) for G, We, bore, and the rest.
 
+## Screenshots
+
+The real app (Streamlit), with the saved condition "Ti64 예시 1" loaded:
+
+![Process tab — D50, yield, GMR](images/metalatom-capture-tab1-process.png)
+
+![Coil heating cross-section — surface film → thin thread, G 8.38](images/metalatom-capture-heating-cross-section.png)
+
+![Film-thread shape figure — upper Ø60.0, tip Ø3.19, arrival Ø1.25 mm](images/metalatom-capture-film-shape.png)
+
 ## Quick start
 
 ```bash
@@ -70,6 +82,12 @@ arrival diameter.
 - Film thread: `v0 = √(2g·L_melt)`; thread diameter from mass balance;
   survival by the stretch-aware growth integral G vs 10.2
 - Materials: 316L, 17-4PH, Ti-6Al-4V, Inconel 718, Fe-2Ni. Gases: Ar, N₂, He.
+
+Two rules the model shows:
+
+![D50 vs gas pressure — saturates above ~40 bar (316L, Lubanska)](images/metalatom-d50-vs-pressure.png)
+
+![Thread vs lump particle size distribution — thread is narrower (D50 40 µm, illustrative lognormal)](images/metalatom-thread-vs-lump-psd.png)
 
 ## Limitations (honest)
 

@@ -1223,15 +1223,15 @@ with tab2:
             _path = "M " + " L ".join(f"{-hw:.3f} {yy:.2f}" for hw, yy in _pts)
             _path += " L " + " L ".join(f"{hw:.3f} {yy:.2f}" for hw, yy in reversed(_pts)) + " Z"
             shapes.append(dict(type="path", layer="above", path=_path,
-                               line=dict(color="#6d0b0b", width=0.5),
-                               fillcolor="#cf1d1d"))
+                               line=dict(color="#0d47a1", width=0.5),
+                               fillcolor="#1e88e5"))
             if not film_thread_on:
                 _rd = max(_pts[-1][0] * 1.8, 1.7)
                 shapes.append(dict(type="circle", layer="above",
                                    x0=-_rd, x1=_rd,
                                    y0=y_low + 1.5 - _rd, y1=y_low + 1.5 + _rd,
-                                   line=dict(color="#6d0b0b", width=0.5),
-                                   fillcolor="#cf1d1d"))
+                                   line=dict(color="#0d47a1", width=0.5),
+                                   fillcolor="#1e88e5"))
             anno_metal = ((f"표면막-실 (G {film_res['growth']:.1f}, "
                            f"팁 Ø{_d0_f:.2f} → 보어 Ø{film_res['d_bore'] * 1000:.2f} mm)")
                           if film_thread_on else
@@ -1318,10 +1318,13 @@ with tab2:
                          text=str(i + 1), showarrow=False, xanchor="left",
                          font=dict(color="#8a6d00", size=9)))
     if tip_molten:
+        _anno_txt = anno_metal if (film_on and film_res is not None) else \
+            f"{anno_metal} (넥 We {We_tip_m:.1f}, 가스 영역 Ø{d_gas_m * 1000:.2f} mm)"
+        _anno_col = "#0d47a1" if (film_on and film_res is not None) else "#cf1d1d"
         anno.append(dict(x=0.015, y=y_tip_mm + 5.0, xref="paper", yref="y",
-                         text=i18n.tr(f"{anno_metal} (넥 We {We_tip_m:.1f}, 가스 영역 Ø{d_gas_m * 1000:.2f} mm)"),
+                         text=i18n.tr(_anno_txt),
                          showarrow=False, xanchor="left", yanchor="top",
-                         font=dict(color="#cf1d1d", size=10),
+                         font=dict(color=_anno_col, size=10),
                          bgcolor="rgba(255,255,255,0.85)"))
     fig.update_layout(
         height=560, margin=dict(l=70, r=95, t=46, b=44),
@@ -1336,50 +1339,98 @@ with tab2:
                f"(턴 간격 {pitch_mm:.1f} mm). 노란 점선은 코일 내경 경로입니다.")
 
     if tip_molten and film_on and film_res is not None:
-        # 낙하 실 단면 (확대): 팁에서 보어까지 실이 가늘어지는 모양을 실제 mm로 그린다.
-        # x축 범위를 고정(±5 mm)해 두어 조건마다 실 두께가 눈으로 다르게 보인다.
+        # 막-실 형상도: 위쪽은 봉 표면의 용융막(위쪽 직경), 아래쪽은 낙하 실(도착 직경).
+        # 파란 막 두께는 모식(실제 막 두께는 모델에 없음). 지름 수치는 계산값.
+        # 위쪽(봉)은 실제 축척, 아래쪽(실)은 확대 축척이라 두 패널의 가로 축척이 다르다.
+        from plotly.subplots import make_subplots
         _H_f = float(fall_h)
         _v0_f = film_res["v0"]
         _d0_f = film_res["d_tip"] * 1000.0
         _d_grav_f = film_res["d_grav"] * 1000.0
         _d_bore_f = film_res["d_bore"] * 1000.0
         _a_film = 9.81 + gas_acc
+        _tip_depth = float(L * 1000.0)
+        _melt_start_depth = _tip_depth - float(melt_len)
+        _z_film = np.linspace(_melt_start_depth / 1000.0, L, 40)
+        _r_film = np.array([rod_radius(zz) for zz in _z_film]) * 1000.0
+        _dep_film = _z_film * 1000.0
+        _upper_d = 2.0 * float(_r_film[0])
+        _band = 2.5  # 파란 막 두께 (모식, 보기용)
+        _fig_f = make_subplots(rows=2, cols=1, vertical_spacing=0.03,
+                               subplot_titles=(f"용융막 — 봉 표면 (위쪽 Ø{_upper_d:.1f} mm)",
+                                               f"낙하 실 — 팁 Ø{_d0_f:.2f} → 보어 Ø{_d_bore_f:.2f} mm "
+                                               f"(성장 G {film_res['growth']:.2f} / 임계 {film_res['growth_crit']:.1f})"
+                                               + ("" if film_thread_on else " — 끊어짐")))
+        # 위쪽: 봉(회색) + 표면막(파란 띠, 양쪽)
+        _fig_f.add_trace(go.Scatter(x=np.concatenate([-_r_film[::-1], _r_film]),
+                                    y=np.concatenate([_dep_film[::-1], _dep_film]),
+                                    fill="toself", line=dict(color="#616161", width=1),
+                                    fillcolor="#e0e0e0", hoverinfo="skip", showlegend=False),
+                         row=1, col=1)
+        for _sgn in (-1, 1):
+            _xo = _sgn * (_r_film + _band)
+            _xi = _sgn * _r_film
+            _fig_f.add_trace(go.Scatter(x=np.concatenate([_xo[::-1], _xi]),
+                                        y=np.concatenate([_dep_film[::-1], _dep_film]),
+                                        fill="toself", line=dict(color="#0d47a1", width=1),
+                                        fillcolor="#1e88e5", hoverinfo="skip", showlegend=False),
+                             row=1, col=1)
+        _fig_f.add_shape(type="line", x0=-_r_film[0], x1=_r_film[0],
+                         y0=_dep_film[0], y1=_dep_film[0],
+                         line=dict(color="#0d47a1", width=1.5), row=1, col=1)
+        _fig_f.add_annotation(x=0.0, y=_dep_film[0], text=f"위쪽 Ø{_upper_d:.1f} mm",
+                              showarrow=False, yshift=-16, font=dict(color="#0d47a1", size=11),
+                              row=1, col=1)
+        # 아래쪽: 낙하 실 (파란색)
         _zs = np.linspace(0.0, _H_f, 60)
         _vs = np.sqrt(_v0_f ** 2 + 2 * _a_film * (_zs / 1000.0))
         _ds = _d0_f * np.sqrt(_v0_f / _vs)
         _xs = np.concatenate([-_ds[::-1] / 2.0, _ds / 2.0])
         _ys = np.concatenate([_zs[::-1], _zs])
-        _fig_f = go.Figure()
         _fig_f.add_trace(go.Scatter(x=_xs, y=_ys, fill="toself",
-                                    line=dict(color="#6d0b0b", width=1),
-                                    fillcolor="#cf1d1d", hoverinfo="skip",
-                                    showlegend=False))
+                                    line=dict(color="#0d47a1", width=1),
+                                    fillcolor="#1e88e5", hoverinfo="skip", showlegend=False),
+                         row=2, col=1)
         if film_thread_on:
             _fig_f.add_trace(go.Scatter(
                 x=[-_d_bore_f / 2.0, _d_bore_f / 2.0, _d_bore_f / 2.0,
                    -_d_bore_f / 2.0, -_d_bore_f / 2.0],
                 y=[_H_f, _H_f, _H_f + 8.0, _H_f + 8.0, _H_f],
-                fill="toself", line=dict(color="#6d0b0b", width=1),
-                fillcolor="#e85d5d", hoverinfo="skip", showlegend=False))
+                fill="toself", line=dict(color="#0d47a1", width=1),
+                fillcolor="#64b5f6", hoverinfo="skip", showlegend=False),
+                             row=2, col=1)
+            _fig_f.add_shape(type="line", x0=-_d_bore_f / 2.0, x1=_d_bore_f / 2.0,
+                             y0=_H_f + 8.0, y1=_H_f + 8.0,
+                             line=dict(color="#0d47a1", width=1.5), row=2, col=1)
+            _fig_f.add_annotation(x=0.0, y=_H_f + 8.0, text=f"도착 Ø{_d_bore_f:.2f} mm",
+                                  showarrow=False, yshift=12, font=dict(color="#0d47a1", size=11),
+                                  row=2, col=1)
         else:
             _rd_f = max(_d_grav_f * 0.9, 1.7)
             _fig_f.add_shape(type="circle", x0=-_rd_f, x1=_rd_f,
                              y0=_H_f + 4.0 - _rd_f, y1=_H_f + 4.0 + _rd_f,
-                             line=dict(color="#6d0b0b", width=0.5), fillcolor="#cf1d1d")
+                             line=dict(color="#0d47a1", width=0.5), fillcolor="#1e88e5",
+                             row=2, col=1)
         _half = max(5.0, (_d0_f / 2.0) * 1.4)
-        _fig_f.update_layout(
-            height=520, margin=dict(l=60, r=30, t=46, b=44),
-            title=dict(text=(f"낙하 실 단면 — 팁 Ø{_d0_f:.2f} mm → 보어 Ø{_d_bore_f:.2f} mm "
-                              f"(성장 G {film_res['growth']:.2f} / 임계 {film_res['growth_crit']:.1f})"
-                              + ("" if film_thread_on else " — 끊어짐")),
-                       font=dict(size=13)),
-            xaxis=dict(title="반경 (mm)", range=[-_half, _half], zeroline=False, showgrid=False),
-            yaxis=dict(title="팁에서 낙하 거리 (mm)", range=[_H_f + 14.0, -4.0], showgrid=False),
-            plot_bgcolor="white")
+        _xmax1 = float(_r_film[0] + _band + 5.0)
+        _fig_f.update_layout(height=760, margin=dict(l=60, r=30, t=70, b=44),
+                             title=dict(text="막-실 형상도 (파란 막 두께는 모식, 지름 수치는 계산값)",
+                                        font=dict(size=13)),
+                             plot_bgcolor="white")
+        _fig_f.update_xaxes(title_text="반경 (mm)", range=[-_xmax1, _xmax1],
+                            zeroline=False, showgrid=False, row=1, col=1)
+        _fig_f.update_yaxes(title_text="깊이 (mm, 아래로 갈수록 팁)",
+                            range=[_tip_depth, _melt_start_depth], showgrid=False, row=1, col=1)
+        _fig_f.update_xaxes(title_text="반경 (mm, 확대)", range=[-_half, _half],
+                            zeroline=False, showgrid=False, row=2, col=1)
+        _fig_f.update_yaxes(title_text="팁에서 낙하 거리 (mm)",
+                            range=[_H_f + 14.0, -4.0], showgrid=False, row=2, col=1)
         st.plotly_chart(_fig_f, width="stretch")
-        st.caption(f"실 두께는 계산값 그대로(실제 mm)입니다. 조건이 바뀌면 팁 지름·보어 도착 지름이 바뀌어 "
-                   f"그림의 실 두께가 달라집니다. 중력 낙하로 Ø{_d_grav_f:.2f} mm까지 가늘어진 뒤 "
-                   f"보어 흡입으로 Ø{_d_bore_f:.2f} mm가 됩니다.")
+        st.caption(f"위쪽 직경 Ø{_upper_d:.1f} mm = 용융 시작 지점(깊이 {_melt_start_depth:.0f} mm)의 봉 지름. "
+                   f"도착 직경 Ø{_d_bore_f:.2f} mm = 보어 도착 실 지름(흡입 포함). "
+                   f"파란 막 두께는 실제 막 두께가 아니라 보기 위한 모식입니다. "
+                   f"위쪽(봉)은 실제 축척, 아래쪽(실)은 확대 축척이라 두 패널의 가로 축척이 다릅니다. "
+                   f"조건이 바뀌면 위쪽·도착 직경이 바뀌어 그림 모양이 달라집니다.")
 
     if compare_on:
         st.markdown(i18n.tr("**기준과 비교 — 같은 조건**"))
